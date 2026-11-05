@@ -11,6 +11,8 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
 - **Online / visto por último**, **digitando...**
 - **Ticks**: ✓ enviada, ✓✓ entregue, ✓✓ azul lida (usando o relógio do servidor)
 - **Mensagens**: texto com formatação (`*negrito*`, `_itálico_`, `~tachado~`, ` ```mono``` `), links, emojis grandes
+- **Emojis animados** (estilo Teams) nas mensagens, reações e barra de reações: tocam ao aparecer e de novo ao passar o
+  mouse/tocar. Pode desligar em Configurações. 881 emojis têm animação; os outros (ex.: bandeiras) ficam normais
 - **Mensagens de voz**: no computador, clique no microfone (pausar, descartar, enviar); no celular, segure para gravar,
   solte para enviar, deslize para a esquerda para cancelar ou para cima para travar. Mostra "gravando áudio..." para o outro lado
 - **Mídia**: fotos, vídeos, documentos e áudios (arquivos), com prévia e legenda antes de enviar, câmera, colar imagem (Ctrl+V), arrastar e soltar
@@ -55,6 +57,9 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
   processador (~224 MB). O modelo é baixado só na primeira figurinha e fica em cache. Se não carregar no aparelho,
   o app usa o ISNet (`@imgly/background-removal`, licença AGPL — verifique para uso comercial fechado) e, sem
   internet, a remoção por cor do fundo.
+- **Emojis animados**: [Noto Emoji Animation](https://googlefonts.github.io/noto-emoji-animation/) © Google, licença
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Os arquivos Lottie (~60 KB cada) são baixados de `fonts.gstatic.com`
+  só quando o emoji aparece na tela e ficam em cache.
 - **Mídia**: os buckets são públicos (URLs com UUID impossíveis de adivinhar). Para privacidade total, troque por
   buckets privados com URLs assinadas.
 - **Chamadas**: usam apenas servidores STUN públicos. Em redes muito restritivas pode ser necessário um servidor TURN
