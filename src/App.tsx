@@ -13,8 +13,11 @@ import { ForwardModal, Lightbox, RightPanel } from './components/info/InfoPanels
 import { StickerCreator } from './components/stickers/StickerCreator'
 import { CallScreen } from './components/call/CallScreen'
 import { AnnouncementPopup, AnnouncementsPanel } from './components/announcements/Announcements'
-import { AppLogo, IconChat, IconGear, IconMegaphone, IconStarOutline, IconStatus } from './lib/icons'
+import { CallsPanel } from './components/calls/CallsPanel'
+import { selectMissedCalls, useCallLog } from './components/calls/callLog'
+import { AppLogo, IconChat, IconGear, IconMegaphone, IconPhoneOutline, IconStarOutline, IconStatus } from './lib/icons'
 import { isAdminEmail } from './lib/admin'
+import { setFaviconCount } from './lib/favicon'
 import { cx, ts } from './lib/utils'
 
 export default function App() {
@@ -58,8 +61,10 @@ function Main({ session }: { session: Session }) {
   useEffect(() => {
     useChat.getState().init(session)
     startRealtime(uid)
+    useCallLog.getState().start(uid)
     return () => {
       stopRealtime()
+      useCallLog.getState().stop()
       useChat.getState().reset()
     }
     // só reinicia quando o usuário muda (não a cada refresh de token)
@@ -76,11 +81,13 @@ function Main({ session }: { session: Session }) {
     syncConvChannels(convIds ? convIds.split(',') : [])
   }, [convIds])
 
-  // título da aba: número de conversas com mensagens não lidas (não o total de mensagens)
+  // título e ícone da aba: número de conversas com mensagens não lidas (não o total de mensagens)
   const unreadChats = useChat(selectUnreadChats)
   useEffect(() => {
     document.title = unreadChats ? `(${unreadChats}) Zap` : 'Zap'
+    setFaviconCount(unreadChats)
   }, [unreadChats])
+  useEffect(() => () => setFaviconCount(0), []) // ao sair da conta, volta o ícone normal
 
   if (!s.loaded || !s.me) return <Splash />
 
@@ -102,6 +109,8 @@ function Main({ session }: { session: Session }) {
         return <StatusPanel />
       case 'announcements':
         return isAdminEmail(session.user.email) ? <AnnouncementsPanel /> : <ChatList />
+      case 'calls':
+        return <CallsPanel />
       default:
         return <ChatList />
     }
@@ -110,7 +119,10 @@ function Main({ session }: { session: Session }) {
   return (
     <div className={cx('app', s.activeId && 'has-chat', s.rightPanel && s.activeId && 'has-right')}>
       <NavRail />
-      <aside className="sidebar">{left}</aside>
+      <aside className="sidebar">
+        <div className="sidebar-content">{left}</div>
+        <MobileTabs />
+      </aside>
       <main className="main">{s.activeId && s.conversations[s.activeId] ? <ChatWindow /> : <Welcome />}</main>
       {s.activeId && s.rightPanel && <RightPanel />}
 
@@ -126,14 +138,54 @@ function Main({ session }: { session: Session }) {
   )
 }
 
-function NavRail() {
+/** Contadores compartilhados pela barra lateral (desktop) e pela barra inferior (celular) */
+function useTabBadges() {
   const s = useChat()
   const uid = s.session!.user.id
   const unreadChats = useChat(selectUnreadChats)
+  const missedCalls = useCallLog(selectMissedCalls)
   const hasNewStatus = s.statuses.some(
     (st) => st.user_id !== uid && !s.viewedStatuses.has(st.id) && ts(st.expires_at) > Date.now(),
   )
-  const isChats = ['chats', 'archived', 'newChat', 'newGroup'].includes(s.leftPanel)
+  return { unreadChats, missedCalls, hasNewStatus }
+}
+
+const CHAT_PANELS = ['chats', 'archived', 'newChat', 'newGroup']
+
+/** Barra inferior do celular, como no app: Conversas · Atualizações · Ligações (+ Anúncios para o admin) */
+function MobileTabs() {
+  const s = useChat()
+  const { unreadChats, missedCalls, hasNewStatus } = useTabBadges()
+  const admin = isAdminEmail(s.session?.user.email)
+  // só aparece nas telas principais (some em "nova conversa", perfil, etc., como no original)
+  if (!['chats', 'status', 'calls', 'announcements'].includes(s.leftPanel)) return null
+  const tab = (key: typeof s.leftPanel, label: string, icon: React.ReactNode, badge?: React.ReactNode) => (
+    <button
+      className={cx('bottom-tab', s.leftPanel === key && 'active')}
+      onClick={() => s.set({ leftPanel: key })}
+      aria-label={label}
+    >
+      <span className="bottom-tab-icon">
+        {icon}
+        {badge}
+      </span>
+      <span className="bottom-tab-label">{label}</span>
+    </button>
+  )
+  return (
+    <nav className="bottom-nav">
+      {tab('chats', 'Conversas', <IconChat />, unreadChats > 0 && <span className="rail-badge">{unreadChats}</span>)}
+      {tab('status', 'Atualizações', <IconStatus />, hasNewStatus && <span className="rail-dot" />)}
+      {tab('calls', 'Ligações', <IconPhoneOutline />, missedCalls > 0 && <span className="rail-badge red">{missedCalls}</span>)}
+      {admin && tab('announcements', 'Anúncios', <IconMegaphone />)}
+    </nav>
+  )
+}
+
+function NavRail() {
+  const s = useChat()
+  const { unreadChats, missedCalls, hasNewStatus } = useTabBadges()
+  const isChats = CHAT_PANELS.includes(s.leftPanel)
   return (
     <nav className="nav-rail">
       <button className={cx('rail-btn', isChats && 'active')} title="Conversas" onClick={() => s.set({ leftPanel: 'chats' })}>
@@ -147,6 +199,14 @@ function NavRail() {
       >
         <IconStatus />
         {hasNewStatus && <span className="rail-dot" />}
+      </button>
+      <button
+        className={cx('rail-btn', s.leftPanel === 'calls' && 'active')}
+        title="Ligações"
+        onClick={() => s.set({ leftPanel: 'calls' })}
+      >
+        <IconPhoneOutline />
+        {missedCalls > 0 && <span className="rail-badge red">{missedCalls}</span>}
       </button>
       <button
         className={cx('rail-btn', s.leftPanel === 'starred' && 'active')}

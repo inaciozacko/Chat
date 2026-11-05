@@ -98,6 +98,18 @@ export type Announcement = {
   expires_at: string | null
 }
 
+export type CallLog = {
+  id: string
+  conversation_id: string
+  caller_id: string
+  callee_id: string
+  video: boolean
+  status: 'ringing' | 'answered' | 'missed' | 'rejected' | 'busy' | 'failed'
+  started_at: string
+  answered_at: string | null
+  ended_at: string | null
+}
+
 export type LeftPanel =
   | 'chats'
   | 'newChat'
@@ -108,5 +120,6 @@ export type LeftPanel =
   | 'archived'
   | 'status'
   | 'announcements'
+  | 'calls'
 
 export type RightPanel = null | 'info' | 'search' | 'starred'

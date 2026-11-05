@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { useChat } from '../../store/chat'
 import { supabase, uploadFile } from '../../lib/supabase'
 import type { Announcement } from '../../lib/types'
@@ -70,12 +71,24 @@ export function AnnouncementCard({
  * Mostra para o usuário o anúncio ATUAL (só existe um ativo; o mais recente substitui os anteriores),
  * uma única vez por pessoa. Chega em tempo real para quem está online.
  */
+// Canal de broadcast "ao vivo": o admin dispara um sinal ao publicar/encerrar e todos os
+// clientes online consultam o banco na hora. (O conteúdo continua vindo do banco, protegido por RLS;
+// o sinal só diz "verifique agora", então não há risco se alguém mais enviá-lo.)
+let liveChannel: RealtimeChannel | null = null
+
+/** Avisa todos os usuários online que o anúncio mudou (chamado pelo painel do admin) */
+export function pingAnnouncements() {
+  liveChannel?.send({ type: 'broadcast', event: 'changed', payload: { at: Date.now() } })
+}
+
 export function AnnouncementPopup() {
   const uid = useChat((s) => s.session?.user.id)
   const [current, setCurrent] = useState<Announcement | null>(null)
+  const seq = useRef(0)
 
   const check = useCallback(async () => {
     if (!uid) return
+    const mySeq = ++seq.current // ignora respostas antigas que chegarem fora de ordem
     const { data } = await supabase
       .from('announcements')
       .select('*')
@@ -86,24 +99,44 @@ export function AnnouncementPopup() {
       .maybeSingle()
     const latest = data as Announcement | null
     // quem publicou não precisa ver o próprio pop-up
-    if (!latest || latest.created_by === uid) return setCurrent(null)
+    if (!latest || latest.created_by === uid) {
+      if (mySeq === seq.current) setCurrent(null)
+      return
+    }
     const { data: seen } = await supabase
       .from('announcement_reads')
       .select('announcement_id')
       .eq('announcement_id', latest.id)
       .eq('user_id', uid)
       .maybeSingle()
-    setCurrent(seen ? null : latest)
+    if (mySeq === seq.current) setCurrent(seen ? null : latest)
   }, [uid])
 
   useEffect(() => {
     check()
-    const ch = supabase
+    // 1) sinal instantâneo do admin (broadcast)
+    const live = supabase
+      .channel('announcements-live', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'changed' }, () => check())
+      .subscribe()
+    liveChannel = live
+    // 2) mudanças no banco (postgres_changes), caso o anúncio venha de outro lugar
+    const db = supabase
       .channel('announcements-feed')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => check())
       .subscribe()
+    // 3) rede de segurança: ao voltar para a aba e a cada minuto
+    const onVisible = () => document.visibilityState === 'visible' && check()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    const poll = window.setInterval(check, 60000)
     return () => {
-      supabase.removeChannel(ch)
+      supabase.removeChannel(live)
+      supabase.removeChannel(db)
+      if (liveChannel === live) liveChannel = null
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+      window.clearInterval(poll)
     }
   }, [check])
 
@@ -208,6 +241,7 @@ export function AnnouncementsPanel() {
       setImage(null)
       setLinkLabel('')
       setLinkUrl('')
+      pingAnnouncements() // aparece na hora para quem está online
       s.showToast('Anúncio publicado. Ele substituiu o anterior.')
       load()
     } catch (e) {
@@ -220,6 +254,7 @@ export function AnnouncementsPanel() {
   const setActive = async (a: Announcement, active: boolean) => {
     const { error } = await supabase.from('announcements').update({ active }).eq('id', a.id)
     if (error) s.showToast(error.message)
+    else pingAnnouncements() // ao encerrar, o pop-up some na hora para quem estiver vendo
     load()
   }
 
@@ -234,13 +269,17 @@ export function AnnouncementsPanel() {
       expires_at: days ? new Date(Date.now() + days * 86400000).toISOString() : null,
     })
     if (error) s.showToast(error.message)
-    else s.showToast('Anúncio publicado novamente')
+    else {
+      pingAnnouncements()
+      s.showToast('Anúncio publicado novamente')
+    }
     load()
   }
 
   const remove = async (a: Announcement) => {
     const { error } = await supabase.from('announcements').delete().eq('id', a.id)
     if (error) s.showToast(error.message)
+    else pingAnnouncements()
     load()
   }
 

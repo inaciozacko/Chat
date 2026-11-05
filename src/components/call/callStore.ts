@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { onCallSignal, sendCallSignal, type CallSignal } from '../../lib/realtime'
 import { useChat } from '../../store/chat'
+import { supabase } from '../../lib/supabase'
 
 /**
  * Chamadas 1:1 de voz e vídeo via WebRTC.
@@ -53,6 +54,21 @@ export const useCall = create<CallState>((set, get) => {
   }
 
   const cleanup = (reason: string | null) => {
+    // registra o fim no histórico de ligações (quem chegar primeiro grava; o outro lado é ignorado)
+    const { callId, phase } = get()
+    if (callId && phase !== 'ended' && phase !== 'idle') {
+      const now = new Date().toISOString()
+      const status =
+        reason === 'Chamada recusada'
+          ? 'rejected'
+          : reason === 'Ocupado em outra chamada'
+            ? 'busy'
+            : reason === 'Falha na conexão' || reason === null
+              ? 'failed'
+              : 'missed'
+      const patch = phase === 'connected' ? { ended_at: now } : { ended_at: now, status }
+      supabase.from('calls').update(patch).eq('id', callId).is('ended_at', null).then()
+    }
     window.clearTimeout(timeout)
     pc?.close()
     pc = null
@@ -80,6 +96,14 @@ export const useCall = create<CallState>((set, get) => {
       if (conn.connectionState === 'connected') {
         window.clearTimeout(timeout)
         set({ phase: 'connected', startedAt: Date.now() })
+        const { callId } = get()
+        if (callId)
+          supabase
+            .from('calls')
+            .update({ status: 'answered', answered_at: new Date().toISOString() })
+            .eq('id', callId)
+            .eq('status', 'ringing')
+            .then()
       }
       if (conn.connectionState === 'failed') {
         signal('end')
@@ -198,6 +222,16 @@ export const useCall = create<CallState>((set, get) => {
         if (!video) conn.addTransceiver('video', { direction: 'recvonly' })
         const offer = await conn.createOffer()
         await conn.setLocalDescription(offer)
+        // registra no histórico antes de tocar no outro lado (falha aqui não impede a chamada)
+        const { error } = await supabase.from('calls').insert({
+          id: get().callId,
+          conversation_id: conversationId,
+          caller_id: myId(),
+          callee_id: peerId,
+          video,
+        })
+        if (error) console.warn('Histórico de ligações indisponível:', error.message)
+        if (get().phase !== 'outgoing') return
         signal('offer', { sdp: offer })
         timeout = window.setTimeout(() => {
           if (get().phase === 'outgoing') {

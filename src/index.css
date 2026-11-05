@@ -3890,3 +3890,103 @@ canvas.sticker-img {
   align-items: center;
   gap: 2px;
 }
+
+/* ------------------------------------------------------------ barra inferior (celular) */
+.sidebar-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-content > .panel {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.bottom-nav {
+  display: none;
+}
+.rail-badge.red {
+  background: var(--danger);
+  color: #fff;
+}
+@media (max-width: 720px) {
+  .bottom-nav {
+    display: flex;
+    flex-shrink: 0;
+    justify-content: space-around;
+    align-items: stretch;
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  }
+  .bottom-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    color: var(--icon);
+    min-width: 0;
+  }
+  .bottom-tab-icon {
+    position: relative;
+    width: 60px;
+    height: 32px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .bottom-tab.active .bottom-tab-icon {
+    background: var(--chip-active);
+    color: var(--chip-active-text);
+  }
+  .bottom-tab-icon .rail-badge {
+    top: -2px;
+    right: 6px;
+  }
+  .bottom-tab-icon .rail-dot {
+    top: 2px;
+    right: 14px;
+  }
+  .bottom-tab-label {
+    font-size: 12.5px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .bottom-tab.active .bottom-tab-label {
+    font-weight: 600;
+  }
+  .toast {
+    bottom: 96px;
+  }
+}
+
+/* ------------------------------------------------------------ ligações */
+.call-item .chat-item-body {
+  padding-right: 0;
+}
+.chat-item-title.missed {
+  color: var(--danger);
+}
+.call-count {
+  font-size: 14px;
+}
+.call-meta {
+  gap: 6px;
+}
+.call-arrow {
+  flex-shrink: 0;
+}
+.call-arrow.ok {
+  color: var(--green-badge);
+}
+.call-arrow.missed {
+  color: var(--danger);
+}
+.call-back {
+  color: var(--green);
+}
