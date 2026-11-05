@@ -147,9 +147,12 @@ function ChatHeader() {
   if (typing.length) {
     subtitle = (
       <span className="typing-text">
-        {conv.is_group
-          ? `${typing.map(([id]) => s.profiles[id]?.full_name?.split(' ')[0]).join(', ')} está digitando...`
-          : 'digitando...'}
+        {(() => {
+          const verb = typing.some(([, t]) => t.kind === 'recording') ? 'gravando áudio...' : 'digitando...'
+          return conv.is_group
+            ? `${typing.map(([id]) => s.profiles[id]?.full_name?.split(' ')[0]).join(', ')} está ${verb}`
+            : verb
+        })()}
       </span>
     )
   } else if (conv.is_group) {

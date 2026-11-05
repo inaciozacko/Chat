@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react'
 import { useChat } from '../../store/chat'
 import { sendTyping } from '../../lib/realtime'
+import { countCameras, defaultFacing, deviceIdOf, isMirrored, openCamera, type Facing } from '../../lib/camera'
 import {
   IconCamera,
+  IconCameraSwitch,
   IconClose,
   IconDocument,
   IconEdit,
   IconImage,
+  IconMic,
   IconPlay,
   IconPlus,
   IconSend,
@@ -18,6 +21,7 @@ import {
 import { Menu, useFilePicker } from '../common'
 import { colorFor, cx, messagePreview } from '../../lib/utils'
 import { StickerPanel } from '../stickers/StickerPanel'
+import { HoldBar, LockHint, RecordingBar, useVoiceRecorder } from './VoiceRecorder'
 
 export function Composer({ convId, onFiles }: { convId: string; onFiles: (files: File[]) => void }) {
   const s = useChat()
@@ -28,6 +32,82 @@ export function Composer({ convId, onFiles }: { convId: string; onFiles: (files:
   const [camera, setCamera] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
   const drafts = useRef<Record<string, string>>({})
+
+  // ---------------------------------------------------------------- mensagem de voz
+  const rec = useVoiceRecorder({
+    onDone: (file, seconds) => {
+      const reply = useChat.getState().replyTo
+      s.set({ replyTo: null })
+      sendTyping(convId, null)
+      s.sendMedia(convId, file, 'audio', { media_name: file.name, media_duration: seconds, reply_to: reply?.id ?? null })
+    },
+    onError: (msg) => s.showToast(msg),
+    onTick: () => sendTyping(convId, 'recording'),
+  })
+  // celular: segurar o botão grava; deslizar para a esquerda cancela; para cima trava
+  const [hold, setHold] = useState<null | { dx: number; dy: number }>(null)
+  const holdStart = useRef<{ x: number; y: number } | null>(null)
+  const pointerKind = useRef<string | null>(null)
+
+  const stopHold = () => {
+    holdStart.current = null
+    setHold(null)
+  }
+  const micDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    pointerKind.current = e.pointerType
+    if (e.pointerType === 'mouse') return // no computador é clique (grava travado, como no WhatsApp Web)
+    e.preventDefault()
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId)
+    } catch {
+      /* ok */
+    }
+    holdStart.current = { x: e.clientX, y: e.clientY }
+    setHold({ dx: 0, dy: 0 })
+    setPanel(null)
+    navigator.vibrate?.(30)
+    rec.start()
+  }
+  const micMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const st = holdStart.current
+    if (!st) return
+    const dx = e.clientX - st.x
+    const dy = e.clientY - st.y
+    if (dx < -110) {
+      stopHold()
+      rec.cancel()
+      navigator.vibrate?.([20, 40, 20])
+    } else if (dy < -70) {
+      stopHold() // travado: continua gravando sem segurar
+      navigator.vibrate?.(20)
+    } else setHold({ dx, dy })
+  }
+  const micUp = () => {
+    if (!holdStart.current) return
+    stopHold()
+    rec.send()
+  }
+  const micCancel = () => {
+    if (!holdStart.current) return
+    stopHold()
+    rec.cancel()
+  }
+  const micClick = () => {
+    const kind = pointerKind.current
+    pointerKind.current = null
+    if (kind && kind !== 'mouse') return
+    setPanel(null)
+    rec.start()
+  }
+
+  // trocou de conversa: descarta a gravação em andamento
+  useEffect(() => {
+    return () => {
+      rec.cancel()
+      holdStart.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convId])
 
   const pickMedia = useFilePicker('image/*,video/*', onFiles, true)
   const pickDoc = useFilePicker('*/*', onFiles, true)
@@ -196,8 +276,13 @@ export function Composer({ convId, onFiles }: { convId: string; onFiles: (files:
         </div>
       )}
 
-      {
-        <div className="composer">
+      <div className={cx('composer', rec.active && 'recording')}>
+        {rec.active && hold ? (
+          <HoldBar rec={rec} dx={hold.dx} />
+        ) : rec.active ? (
+          <RecordingBar rec={rec} />
+        ) : (
+          <>
           <button
             className={cx('icon-btn', attach && 'rotated')}
             onClick={(e) => setAttach(e.currentTarget)}
@@ -227,11 +312,35 @@ export function Composer({ convId, onFiles }: { convId: string; onFiles: (files:
               onPaste={onPaste}
             />
           </div>
-          <button className="icon-btn send" onClick={send} title="Enviar" disabled={!text.trim()}>
+          </>
+        )}
+        {rec.active && !hold ? (
+          <button key="rec-send" className="icon-btn rec-send" onClick={rec.send} title="Enviar áudio" aria-label="Enviar áudio">
             <IconSend />
           </button>
-        </div>
-      }
+        ) : text.trim() || s.editing ? (
+          <button key="send" className="icon-btn send" onClick={send} title="Enviar" disabled={!text.trim()}>
+            <IconSend />
+          </button>
+        ) : (
+          <span key="mic" className="mic-wrap">
+            {hold && rec.active && <LockHint dy={hold.dy} />}
+            <button
+              className={cx('icon-btn mic-btn', hold && 'holding')}
+              title="Gravar áudio"
+              aria-label="Gravar áudio"
+              onPointerDown={micDown}
+              onPointerMove={micMove}
+              onPointerUp={micUp}
+              onPointerCancel={micCancel}
+              onClick={micClick}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <IconMic />
+            </button>
+          </span>
+        )}
+      </div>
 
       {attach && (
         <Menu
@@ -261,29 +370,61 @@ export function Composer({ convId, onFiles }: { convId: string; onFiles: (files:
 
 function CameraCapture({ onClose, onCapture }: { onClose: () => void; onCapture: (f: File) => void }) {
   const video = useRef<HTMLVideoElement>(null)
+  const stream = useRef<MediaStream | null>(null)
+  const [facing, setFacing] = useState<Facing>(defaultFacing)
+  const [mirror, setMirror] = useState(false)
+  const [canSwitch, setCanSwitch] = useState(false)
+  const [busy, setBusy] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // abre (ou troca) a câmera sempre que o lado muda
   useEffect(() => {
-    let stream: MediaStream | null = null
-    navigator.mediaDevices
-      .getUserMedia({ video: { width: 1280, height: 720 } })
-      .then((s) => {
-        stream = s
+    let alive = true
+    const prevId = deviceIdOf(stream.current)
+    stream.current?.getTracks().forEach((t) => t.stop()) // celulares não abrem duas câmeras juntas
+    stream.current = null
+    setBusy(true)
+    openCamera(facing, prevId)
+      .then(async (s) => {
+        if (!alive) return s.getTracks().forEach((t) => t.stop())
+        stream.current = s
         if (video.current) video.current.srcObject = s
+        setMirror(isMirrored(s, facing))
+        setError(null)
+        const n = await countCameras()
+        if (alive) setCanSwitch(n > 1)
       })
-      .catch(() => setError('Não foi possível acessar a câmera'))
-    return () => stream?.getTracks().forEach((t) => t.stop())
-  }, [])
+      .catch((e: DOMException) => {
+        if (!alive) return
+        setError(
+          e?.name === 'NotAllowedError'
+            ? 'Permita o acesso à câmera nas configurações do navegador'
+            : 'Não foi possível acessar a câmera',
+        )
+      })
+      .finally(() => alive && setBusy(false))
+    return () => {
+      alive = false
+    }
+  }, [facing])
+  useEffect(() => () => stream.current?.getTracks().forEach((t) => t.stop()), [])
+
   const snap = () => {
-    const v = video.current!
+    const v = video.current
+    if (!v || !v.videoWidth || busy) return
     const c = document.createElement('canvas')
     c.width = v.videoWidth
     c.height = v.videoHeight
     const ctx = c.getContext('2d')!
-    ctx.translate(c.width, 0)
-    ctx.scale(-1, 1)
+    if (mirror) {
+      ctx.translate(c.width, 0)
+      ctx.scale(-1, 1)
+    }
     ctx.drawImage(v, 0, 0)
     c.toBlob((b) => b && onCapture(new File([b], `foto-${Date.now()}.jpg`, { type: 'image/jpeg' })), 'image/jpeg', 0.9)
   }
+  const flip = () => !busy && setFacing((f) => (f === 'user' ? 'environment' : 'user'))
+
   return (
     <div className="camera-overlay">
       <div className="camera-top">
@@ -292,11 +433,22 @@ function CameraCapture({ onClose, onCapture }: { onClose: () => void; onCapture:
         </button>
         <span>Tirar foto</span>
       </div>
-      {error ? <div className="camera-error">{error}</div> : <video ref={video} autoPlay playsInline muted />}
+      {error && <div className="camera-error">{error}</div>}
+      <video ref={video} className={cx(mirror && 'mirror', error && 'hidden')} autoPlay playsInline muted />
       {!error && (
-        <button className="camera-shutter" onClick={snap} aria-label="Capturar">
-          <IconCamera size={30} />
-        </button>
+        <div className="camera-bar">
+          <span className="camera-bar-side" />
+          <button className="camera-shutter" onClick={snap} disabled={busy} aria-label="Capturar">
+            <IconCamera size={30} />
+          </button>
+          <span className="camera-bar-side">
+            {canSwitch && (
+              <button className="camera-switch" onClick={flip} disabled={busy} aria-label="Trocar câmera" title="Trocar câmera">
+                <IconCameraSwitch size={26} />
+              </button>
+            )}
+          </span>
+        </div>
       )}
     </div>
   )

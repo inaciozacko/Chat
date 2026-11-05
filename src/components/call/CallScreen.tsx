@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useCall } from './callStore'
 import { useChat } from '../../store/chat'
-import { IconHangup, IconMic, IconMicOff, IconPhone, IconVideo, IconVideoOff } from '../../lib/icons'
+import { IconCameraSwitch, IconHangup, IconMic, IconMicOff, IconPhone, IconVideo, IconVideoOff } from '../../lib/icons'
 import { Avatar } from '../common'
 import { cx, formatDuration } from '../../lib/utils'
 
@@ -105,7 +105,8 @@ export function CallScreen() {
         </div>
       )}
       {c.video && c.local && c.phase !== 'ended' && (
-        <video ref={localRef} className={cx('call-local', !c.camOn && 'off')} autoPlay playsInline muted />
+        <video ref={localRef} className={cx('call-local', !c.camOn && 'off', c.mirrorLocal && 'mirror')}
+          onClick={() => c.canSwitch && c.switchCamera()} autoPlay playsInline muted />
       )}
       <div className="call-controls">
         {c.phase === 'incoming' ? (
@@ -122,6 +123,11 @@ export function CallScreen() {
             {c.video && (
               <button className={cx('call-btn', !c.camOn && 'off')} onClick={c.toggleCam} title="Câmera">
                 {c.camOn ? <IconVideo /> : <IconVideoOff />}
+              </button>
+            )}
+            {c.video && c.canSwitch && (
+              <button className="call-btn" onClick={c.switchCamera} disabled={c.switching} title="Trocar câmera">
+                <IconCameraSwitch />
               </button>
             )}
             <button className={cx('call-btn', !c.micOn && 'off')} onClick={c.toggleMic} title="Microfone">

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { onCallSignal, sendCallSignal, type CallSignal } from '../../lib/realtime'
 import { useChat } from '../../store/chat'
 import { supabase } from '../../lib/supabase'
+import { countCameras, deviceIdOf, isMirrored, openCamera, type Facing } from '../../lib/camera'
 
 /**
  * Chamadas 1:1 de voz e vídeo via WebRTC.
@@ -28,12 +29,18 @@ type CallState = {
   endReason: string | null
   local: MediaStream | null
   remote: MediaStream | null
+  /** câmera em uso nas chamadas de vídeo (começa na frontal, como no app original) */
+  facing: Facing
+  mirrorLocal: boolean
+  canSwitch: boolean
+  switching: boolean
   startCall: (conversationId: string, peerId: string, video: boolean) => Promise<void>
   accept: () => Promise<void>
   reject: () => void
   hangup: (reason?: string) => void
   toggleMic: () => void
   toggleCam: () => void
+  switchCamera: () => Promise<void>
 }
 
 let pc: RTCPeerConnection | null = null
@@ -75,7 +82,7 @@ export const useCall = create<CallState>((set, get) => {
     pendingOffer = null
     pendingIce = []
     get().local?.getTracks().forEach((t) => t.stop())
-    set({ phase: 'ended', endReason: reason, local: null, remote: null, ringing: false })
+    set({ phase: 'ended', endReason: reason, local: null, remote: null, ringing: false, switching: false })
     setTimeout(() => {
       if (get().phase === 'ended')
         set({ phase: 'idle', callId: null, conversationId: null, peerId: null, startedAt: null, endReason: null })
@@ -116,7 +123,15 @@ export const useCall = create<CallState>((set, get) => {
 
   const getMedia = async (video: boolean) => {
     try {
-      return await navigator.mediaDevices.getUserMedia({ audio: true, video: video ? { width: 1280, height: 720 } : false })
+      const s = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: video ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: { ideal: 'user' } } : false,
+      })
+      if (video) {
+        set({ facing: 'user', mirrorLocal: isMirrored(s, 'user'), canSwitch: false })
+        countCameras().then((n) => set({ canSwitch: n > 1 }))
+      }
+      return s
     } catch {
       if (video) {
         // sem câmera: tenta só áudio
@@ -200,6 +215,10 @@ export const useCall = create<CallState>((set, get) => {
     endReason: null,
     local: null,
     remote: null,
+    facing: 'user',
+    mirrorLocal: true,
+    canSwitch: false,
+    switching: false,
 
     startCall: async (conversationId, peerId, video) => {
       if (get().phase !== 'idle' && get().phase !== 'ended') return
@@ -287,6 +306,44 @@ export const useCall = create<CallState>((set, get) => {
       const on = !get().camOn
       get().local?.getVideoTracks().forEach((t) => (t.enabled = on))
       set({ camOn: on })
+    },
+
+    switchCamera: async () => {
+      const { local, facing, camOn, switching } = get()
+      const old = local?.getVideoTracks()[0]
+      if (!local || !old || switching) return
+      set({ switching: true })
+      const next: Facing = facing === 'user' ? 'environment' : 'user'
+      const prevId = deviceIdOf(local)
+      old.stop() // celulares não abrem duas câmeras ao mesmo tempo
+      let used = next
+      let fresh = await openCamera(next, prevId).catch(() => null)
+      if (!fresh) {
+        used = facing
+        fresh = await openCamera(facing).catch(() => null)
+      }
+      const cur = get()
+      if (cur.local !== local || cur.phase === 'ended' || cur.phase === 'idle') {
+        fresh?.getTracks().forEach((t) => t.stop()) // chamada acabou enquanto trocava
+        return
+      }
+      if (!fresh) {
+        useChat.getState().showToast('Não foi possível trocar a câmera')
+        set({ switching: false, camOn: false })
+        return
+      }
+      const track = fresh.getVideoTracks()[0]
+      track.enabled = camOn
+      // troca o vídeo enviado sem renegociar a chamada
+      const sender = pc?.getSenders().find((s) => s.track === old || s.track?.kind === 'video')
+      await sender?.replaceTrack(track).catch(() => {})
+      set({
+        local: new MediaStream([...local.getAudioTracks(), track]),
+        facing: used,
+        mirrorLocal: isMirrored(fresh, used),
+        switching: false,
+      })
+      if (used !== next) useChat.getState().showToast('Não foi possível trocar a câmera')
     },
   }
 })

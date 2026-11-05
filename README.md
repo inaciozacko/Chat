@@ -11,6 +11,8 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
 - **Online / visto por último**, **digitando...**
 - **Ticks**: ✓ enviada, ✓✓ entregue, ✓✓ azul lida (usando o relógio do servidor)
 - **Mensagens**: texto com formatação (`*negrito*`, `_itálico_`, `~tachado~`, ` ```mono``` `), links, emojis grandes
+- **Mensagens de voz**: no computador, clique no microfone (pausar, descartar, enviar); no celular, segure para gravar,
+  solte para enviar, deslize para a esquerda para cancelar ou para cima para travar. Mostra "gravando áudio..." para o outro lado
 - **Mídia**: fotos, vídeos, documentos e áudios (arquivos), com prévia e legenda antes de enviar, câmera, colar imagem (Ctrl+V), arrastar e soltar
 - **Responder**, **encaminhar** (até 5 conversas), **reagir** (barra rápida + todos os emojis, duplo clique = ❤️),
   **editar** (até 15 min, ↑ edita a última), **apagar para mim / para todos**, **favoritar**, **selecionar várias**
