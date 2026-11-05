@@ -48,8 +48,11 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
 
 ## Observações
 
-- **Remoção de fundo**: roda 100% no navegador. Na primeira figurinha o modelo (~40 MB) é baixado e fica em cache.
-  A biblioteca `@imgly/background-removal` tem licença AGPL — para uso comercial fechado, verifique a licença.
+- **Remoção de fundo**: roda 100% no navegador. A IA principal é o **BiRefNet** (`onnx-community/BiRefNet_lite-ONNX`,
+  licença MIT) via `@huggingface/transformers`: usa a placa de vídeo (WebGPU, ~115 MB) quando disponível, senão o
+  processador (~224 MB). O modelo é baixado só na primeira figurinha e fica em cache. Se não carregar no aparelho,
+  o app usa o ISNet (`@imgly/background-removal`, licença AGPL — verifique para uso comercial fechado) e, sem
+  internet, a remoção por cor do fundo.
 - **Mídia**: os buckets são públicos (URLs com UUID impossíveis de adivinhar). Para privacidade total, troque por
   buckets privados com URLs assinadas.
 - **Chamadas**: usam apenas servidores STUN públicos. Em redes muito restritivas pode ser necessário um servidor TURN

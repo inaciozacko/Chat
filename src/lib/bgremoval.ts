@@ -1,19 +1,22 @@
 /**
  * Remoção de fundo "melhor esforço" — tenta várias estratégias e escolhe a melhor automaticamente.
  *
+ * A IA é o BiRefNet (ver segmentation.ts), com o ISNet como reserva.
+ *
  * Imagens estáticas
- *   - "ia":        modelo ISNet rodado 3x (normal, com margem e espelhado) e combinado (média)
+ *   - "ia":        IA na imagem normal + espelhada (média)
  *   - "cor":       detecta a(s) cor(es) de fundo pelas bordas e remove (fundos lisos, logos, desenhos, prints)
- *   - "combinado": IA + cor (a cor limpa sobras de fundo que a IA deixou; a IA protege o objeto)
+ *   - "combinado": IA + cor, conservador: só apaga onde as duas concordam que é fundo
  *   - "original":  transparência que a imagem já tinha
  *   Cada candidato recebe uma nota (bordas, contorno alinhado às arestas da imagem, cobertura, fragmentação).
  *
  * GIFs
- *   - fundo liso → remoção por cor em todos os quadros (rápido)
- *   - câmera parada → IA em quadros-chave + subtração de fundo (o que se move entra na figurinha)
- *   - câmera em movimento → IA quadro a quadro
+ *   - IA em todos os quadros (placa de vídeo) ou em até 16 quadros-chave (processador)
+ *   - suavização no tempo: um quadro em que o objeto "sumiu" é corrigido pelos vizinhos
+ *   - fundo liso: a cor só limpa sobras onde a IA também diz que é fundo (nunca apaga o objeto)
  */
-import { aiMask, coverage, ownAlpha, type Progress, type Raster } from './sticker'
+import { coverage, ownAlpha, type Progress, type Raster } from './sticker'
+import { getEngine } from './segmentation'
 
 export type Method = 'combinado' | 'ia' | 'cor' | 'original'
 export const METHOD_LABEL: Record<Method, string> = {
@@ -40,10 +43,6 @@ function colorDist(r1: number, g1: number, b1: number, r2: number, g2: number, b
   const dg = g1 - g2
   const db = b1 - b2
   return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db)
-}
-
-function pxDist(a: Uint8ClampedArray, i: number, b: Uint8ClampedArray, j: number) {
-  return colorDist(a[i * 4], a[i * 4 + 1], a[i * 4 + 2], b[j * 4], b[j * 4 + 1], b[j * 4 + 2])
 }
 
 function borderIndices(w: number, h: number, band: number) {
@@ -338,6 +337,17 @@ export function scoreMask(r: Raster, mask: Uint8Array): number {
 
 // ------------------------------------------------------------------ imagens estáticas
 
+/** Funde IA e cor de forma CONSERVADORA: só apaga onde a cor diz "fundo" e a IA também acha que é fundo */
+function fuse(ia: Uint8Array, key: Uint8Array) {
+  const out = new Uint8Array(ia.length)
+  for (let i = 0; i < ia.length; i++) {
+    if (key[i] < 128 && ia[i] < 110) out[i] = Math.min(ia[i], key[i]) // os dois concordam: fundo
+    else if (key[i] >= 128 && ia[i] > 50) out[i] = Math.max(ia[i], 210) // IA viu algo que não é cor de fundo: fica
+    else out[i] = ia[i] // na dúvida, vale a IA (protege o objeto principal)
+  }
+  return out
+}
+
 export async function autoMaskStatic(r: Raster, onProgress?: Progress, alive = () => true): Promise<StaticResult> {
   const candidates: StaticResult['candidates'] = {}
 
@@ -348,46 +358,42 @@ export async function autoMaskStatic(r: Raster, onProgress?: Progress, alive = (
   const key = colorKeyMask(r)
   if (key && key.confidence > 0.5) candidates.cor = key.mask
 
-  // IA em 3 variações (normal, com margem, espelhada) e média
-  const step = (i: number, label: string) => onProgress?.(label, i / 3)
+  onProgress?.('Carregando a IA…', 0)
+  const engine = await getEngine(onProgress)
+  if (!alive()) throw new Error('cancelado')
+
+  // IA: imagem normal + espelhada (média das duas corrige erros de um lado só).
+  // No modelo reserva (ISNet) também roda com margem em volta, que ajuda quando o objeto encosta na borda.
   const masks: Uint8Array[] = []
-  step(0, 'Analisando a imagem com IA… (1/3)')
-  masks.push(await aiMask(r, onProgress))
+  onProgress?.(`Separando o objeto principal (${engine.name})…`, 0.2)
+  masks.push(await engine.run(r))
   if (!alive()) throw new Error('cancelado')
   try {
-    step(1, 'Analisando a imagem com IA… (2/3)')
-    const pad = Math.round(Math.max(r.w, r.h) * 0.12)
-    const padded = padRaster(r, pad)
-    masks.push(cropMask(await aiMask(padded), padded.w, pad, r.w, r.h))
-    if (!alive()) throw new Error('cancelado')
-    step(2, 'Analisando a imagem com IA… (3/3)')
-    masks.push(flipMask(await aiMask(flipRaster(r)), r.w, r.h))
+    onProgress?.(`Conferindo o recorte (${engine.name})…`, 0.55)
+    masks.push(flipMask(await engine.run(flipRaster(r)), r.w, r.h))
+    if (engine.name === 'ISNet') {
+      if (!alive()) throw new Error('cancelado')
+      const pad = Math.round(Math.max(r.w, r.h) * 0.12)
+      const padded = padRaster(r, pad)
+      masks.push(cropMask(await engine.run(padded), padded.w, pad, r.w, r.h))
+    }
   } catch (e) {
     if ((e as Error).message === 'cancelado') throw e
-    /* uma variação falhou: segue com as que deram certo */
+    /* variação extra falhou: segue com o que já tem */
   }
-  const ia = average(masks)
-  candidates.ia = ia
-
-  if (candidates.cor) {
-    const k = candidates.cor
-    const fused = new Uint8Array(ia.length)
-    for (let i = 0; i < ia.length; i++) {
-      if (k[i] < 128 && ia[i] < 230) fused[i] = Math.min(ia[i], k[i]) // cor de fundo + IA em dúvida → sai
-      else if (k[i] >= 128 && ia[i] > 50) fused[i] = Math.max(ia[i], 200) // IA viu algo e não é cor de fundo → fica
-      else fused[i] = ia[i]
-    }
-    candidates.combinado = fused
-  }
+  candidates.ia = average(masks)
+  if (candidates.cor) candidates.combinado = fuse(candidates.ia, candidates.cor)
 
   onProgress?.('Escolhendo o melhor recorte…', 1)
   const scores: StaticResult['scores'] = {}
   for (const [k, m] of Object.entries(candidates) as [Method, Uint8Array][]) scores[k] = scoreMask(r, m)
-  // pequenas preferências em caso de empate técnico
+  // preferências: a IA nova é a referência; "cor" sozinha só ganha com folga (ela pode comer partes do objeto)
   if (scores.original !== undefined) scores.original += 0.06
-  if (scores.combinado !== undefined) scores.combinado += 0.02
+  if (scores.ia !== undefined) scores.ia += engine.name === 'BiRefNet' ? 0.05 : 0
+  if (scores.combinado !== undefined) scores.combinado += 0.03
+  if (scores.cor !== undefined) scores.cor -= 0.06
 
-  const order: Method[] = ['original', 'combinado', 'ia', 'cor']
+  const order: Method[] = ['original', 'ia', 'combinado', 'cor']
   let best: Method = 'ia'
   for (const k of order) if (scores[k] !== undefined && scores[k]! > (scores[best] ?? -1)) best = k
   return { candidates, scores, best }
@@ -395,106 +401,67 @@ export async function autoMaskStatic(r: Raster, onProgress?: Progress, alive = (
 
 // ------------------------------------------------------------------ GIFs
 
+/**
+ * Suavização no tempo: mediana do quadro com os vizinhos.
+ * Se a IA "perder" o objeto em um quadro isolado (ou inventar um pedaço), os vizinhos corrigem.
+ */
+export function temporalMedian(masks: Uint8Array[]): Uint8Array[] {
+  const n = masks.length
+  if (n < 3) return masks
+  return masks.map((cur, i) => {
+    const a = masks[(i - 1 + n) % n] // GIF é em loop: o vizinho do 1º é o último
+    const b = masks[(i + 1) % n]
+    const out = new Uint8Array(cur.length)
+    for (let p = 0; p < cur.length; p++) {
+      const x = a[p]
+      const y = cur[p]
+      const z = b[p]
+      out[p] = Math.max(Math.min(x, y), Math.min(Math.max(x, y), z))
+    }
+    return out
+  })
+}
+
 export async function autoMaskGif(frames: Raster[], onProgress?: Progress, alive = () => true): Promise<GifResult> {
   const n = frames.length
-  const { w, h } = frames[0]
-  const size = w * h
 
   // 1) já transparente
-  const own0 = ownAlpha(frames[0])
-  const ownCov = coverage(own0)
+  const ownCov = coverage(ownAlpha(frames[0]))
   if (ownCov > 0.01 && ownCov < 0.97) {
     const masks = frames.map(ownAlpha)
     return { masks, method: 'Transparência original', score: scoreMask(frames[0], masks[0]) }
   }
 
-  // 2) fundo liso → cor em todos os quadros
-  onProgress?.('Analisando o fundo do GIF…', 0)
-  const sample = [...new Set([0, n >> 1, n - 1])]
-  let keyScore = 0
-  let keyOk = true
-  for (const i of sample) {
-    const k = colorKeyMask(frames[i])
-    if (!k || k.confidence < 0.8) {
-      keyOk = false
-      break
-    }
-    keyScore += scoreMask(frames[i], k.mask)
-  }
-  keyScore /= sample.length
-  if (keyOk && keyScore >= 0.6) {
-    const masks: Uint8Array[] = []
-    for (let i = 0; i < n; i++) {
-      onProgress?.(`Removendo fundo por cor… quadro ${i + 1} de ${n}`, i / n)
-      masks.push(colorKeyMask(frames[i])?.mask ?? new Uint8Array(size).fill(255))
-      if (i % 6 === 5) await new Promise((r) => setTimeout(r, 0))
-    }
-    return { masks, method: 'Cor do fundo', score: keyScore }
-  }
-
-  // 3) câmera parada? monta o "fundo limpo" (mediana dos quadros)
-  let plate: Uint8ClampedArray | null = null
-  let staticBg = false
-  if (n >= 4) {
-    const pick = Array.from({ length: Math.min(n, 15) }, (_, i) => frames[Math.floor((i * n) / Math.min(n, 15))])
-    plate = new Uint8ClampedArray(size * 4)
-    const vals = new Uint8Array(pick.length)
-    for (let p = 0; p < size; p++) {
-      for (let c = 0; c < 3; c++) {
-        for (let k = 0; k < pick.length; k++) vals[k] = pick[k].rgba[p * 4 + c]
-        vals.sort()
-        plate[p * 4 + c] = vals[vals.length >> 1]
-      }
-      plate[p * 4 + 3] = 255
-    }
-    const border = borderIndices(w, h, 1)
-    let still = 0
-    for (const p of border) {
-      let ok = true
-      for (const f of pick) if (pxDist(f.rgba, p, plate, p) > 45) (ok = false)
-      if (ok) still++
-    }
-    staticBg = still / border.length > 0.85
-  }
-
-  // 4) IA nos quadros-chave (câmera parada) ou em todos (câmera em movimento)
-  const keyCount = staticBg ? Math.min(n, 10) : n
-  const keyIdx = Array.from({ length: keyCount }, (_, i) => Math.round((i * (n - 1)) / Math.max(1, keyCount - 1)))
-  const uniqueKeys = [...new Set(keyIdx)]
+  // 2) IA. Com placa de vídeo roda em TODOS os quadros (mais fiel); no processador, em até 16 quadros-chave
+  onProgress?.('Carregando a IA…', 0)
+  const engine = await getEngine(onProgress)
+  const keyCount = engine.fast ? n : Math.min(n, 16)
+  const keys = [...new Set(Array.from({ length: keyCount }, (_, i) => Math.round((i * (n - 1)) / Math.max(1, keyCount - 1))))]
   const keyMasks = new Map<number, Uint8Array>()
-  for (let k = 0; k < uniqueKeys.length; k++) {
+  for (let k = 0; k < keys.length; k++) {
     if (!alive()) throw new Error('cancelado')
-    onProgress?.(`Removendo fundo com IA… quadro ${k + 1} de ${uniqueKeys.length}`, k / uniqueKeys.length)
-    keyMasks.set(uniqueKeys[k], await aiMask(frames[uniqueKeys[k]]))
+    onProgress?.(`Separando o objeto principal… quadro ${k + 1} de ${keys.length}`, k / keys.length)
+    keyMasks.set(keys[k], await engine.run(frames[keys[k]]))
   }
+  let masks = frames.map((_, i) => {
+    const exact = keyMasks.get(i)
+    if (exact) return exact
+    const nearest = keys.reduce((a, b) => (Math.abs(b - i) < Math.abs(a - i) ? b : a))
+    return keyMasks.get(nearest)!
+  })
 
-  if (!staticBg || !plate) {
-    const masks = frames.map((_, i) => keyMasks.get(i)!)
-    return { masks, method: 'IA quadro a quadro', score: scoreMask(frames[0], masks[0]) }
-  }
+  // 3) suavização no tempo (corrige quadros em que o objeto "sumiu")
+  masks = temporalMedian(masks)
 
-  // 5) propaga: máscara do quadro-chave mais próximo + o que se moveu em relação ao fundo limpo,
-  //    tirando "fantasmas" (lugar onde o objeto estava no quadro-chave mas agora mostra o fundo)
-  const masks: Uint8Array[] = []
-  for (let i = 0; i < n; i++) {
-    const nearest = uniqueKeys.reduce((a, b) => (Math.abs(b - i) < Math.abs(a - i) ? b : a))
-    const km = keyMasks.get(nearest)!
-    if (nearest === i) {
-      masks.push(km)
-      continue
-    }
-    const f = frames[i].rgba
-    const kf = frames[nearest].rgba
-    const out = new Uint8Array(size)
-    for (let p = 0; p < size; p++) {
-      const dNow = pxDist(f, p, plate, p)
-      let v = km[p]
-      if (v > 127 && dNow < 25 && pxDist(kf, p, plate, p) > 45) v = 0 // fantasma
-      if (dNow > 50) v = Math.max(v, 230) // movimento
-      out[p] = v
-    }
-    masks.push(out)
-    if (i % 6 === 5) await new Promise((r) => setTimeout(r, 0))
+  // 4) fundo liso: a cor ajuda a limpar sobras, mas só onde a IA também diz que é fundo
+  const sample = colorKeyMask(frames[0])
+  let method = keys.length === n ? `IA ${engine.name} em todos os quadros` : `IA ${engine.name} em ${keys.length} quadros-chave`
+  if (sample && sample.confidence > 0.85) {
+    masks = masks.map((m, i) => {
+      const k = i === 0 ? sample : colorKeyMask(frames[i])
+      return k ? fuse(m, k.mask) : m
+    })
+    method += ' + cor do fundo'
   }
-  return { masks, method: 'IA + movimento', score: scoreMask(frames[0], masks[0]) }
+  return { masks, method, score: scoreMask(frames[0], masks[0]) }
 }

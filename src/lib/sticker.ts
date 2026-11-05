@@ -226,7 +226,8 @@ export function effectiveAlpha(
       const { labels, areas } = label(bin, w, h, 1)
       let largest = 0
       for (const a of areas) if (a > largest) largest = a
-      const min = Math.max(48, largest * 0.06)
+      // só apaga migalhas de verdade (2,5% do objeto principal) — partes separadas do objeto, como uma mão, ficam
+      const min = Math.max(48, largest * 0.025)
       for (let i = 0; i < n; i++) if (labels[i] >= 0 && areas[labels[i]] < min) (out[i] = 0), (bin[i] = 0)
     }
     if (s.fillHoles) {
