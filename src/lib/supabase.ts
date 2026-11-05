@@ -1,9 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
-const key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY) as
-  | string
-  | undefined
+// Valores padrão do projeto. A chave "publishable" é pública por design (vai no JS do navegador);
+// a segurança dos dados vem das policies de RLS em supabase/schema.sql.
+// Variáveis de ambiente (.env.local ou painel da Vercel), se definidas, têm prioridade.
+const DEFAULT_URL = 'https://rooinuebcomwiottdnxl.supabase.co'
+const DEFAULT_KEY = 'sb_publishable_Ug_TBHKporXm49d_pdZ91w_foSUf9Tm'
+
+const url = ((import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() || DEFAULT_URL) as string
+const key = (
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim() ||
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ||
+  DEFAULT_KEY
+) as string
 
 export const isConfigured = Boolean(url && key)
 
