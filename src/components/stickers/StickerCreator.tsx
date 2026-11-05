@@ -47,7 +47,8 @@ export function StickerCreator() {
   const [file, setFile] = useState<Blob | null>(s.stickerCreator?.file ?? null)
   const [source, setSource] = useState<Source | null>(null)
   // remoção automática (várias estratégias, escolhe a melhor); ligada para imagens e GIFs
-  const [autoOn, setAutoOn] = useState(true)
+  // a IA só roda quando o usuário pede (botão "Remover fundo com IA")
+  const [autoOn, setAutoOn] = useState(false)
   const [auto, setAuto] = useState<{
     masks: Uint8Array[]
     label: string
@@ -95,7 +96,7 @@ export function StickerCreator() {
     setSource(null)
     setAuto(null)
     setMethod(null)
-    setAutoOn(true)
+    setAutoOn(false)
     setError(null)
     setHint(null)
     setFrameIndex(0)
@@ -459,21 +460,37 @@ export function StickerCreator() {
 
           <div className="sc-group">
             <div className="sc-group-title">Fundo</div>
-            <div className="sc-row">
-              <span>Remover fundo automaticamente</span>
+            {autoOn ? (
               <button
-                className={cx('toggle', autoOn && 'on')}
-                role="switch"
-                aria-checked={autoOn}
+                className="btn-outline sc-ai-btn"
                 disabled={!!progress || !source}
                 onClick={() => {
                   setError(null)
-                  setAutoOn((v) => !v)
+                  setHint(null)
+                  setAutoOn(false) // volta para a imagem original (o resultado da IA fica guardado)
                 }}
               >
-                <span />
+                <IconUndo size={18} /> Voltar ao fundo original
               </button>
-            </div>
+            ) : (
+              <>
+                <button
+                  className="btn-primary sc-ai-btn"
+                  disabled={!!progress || !source}
+                  onClick={() => {
+                    setError(null)
+                    setAutoOn(true)
+                  }}
+                >
+                  <IconWand size={18} /> Remover fundo com IA
+                </button>
+                {!auto && (
+                  <span className="sc-label">
+                    A IA separa o objeto principal do fundo. Na primeira vez ela é baixada (pode levar alguns segundos).
+                  </span>
+                )}
+              </>
+            )}
             {autoOn && auto?.statics && (
               <div className="sc-methods">
                 <span className="sc-label">Método (★ = escolhido automaticamente)</span>

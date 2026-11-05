@@ -24,6 +24,8 @@ export type Settings = {
   sounds: boolean
   enterToSend: boolean
   wallpaper: string
+  /** emojis que se mexem nas mensagens e reações (estilo Teams) */
+  animatedEmoji: boolean
 }
 
 function loadSettings(): Settings {
@@ -33,6 +35,7 @@ function loadSettings(): Settings {
     sounds: true,
     enterToSend: true,
     wallpaper: 'default',
+    animatedEmoji: true,
   }
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem('zap-settings') || '{}') }

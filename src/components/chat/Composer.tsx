@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react'
 import { useChat } from '../../store/chat'
 import { sendTyping } from '../../lib/realtime'
 import { countCameras, defaultFacing, deviceIdOf, isMirrored, openCamera, type Facing } from '../../lib/camera'
@@ -21,6 +20,7 @@ import {
 import { Menu, useFilePicker } from '../common'
 import { colorFor, cx, messagePreview } from '../../lib/utils'
 import { StickerPanel } from '../stickers/StickerPanel'
+import { EmojiPanel } from '../emoji/EmojiPanel'
 import { HoldBar, LockHint, RecordingBar, useVoiceRecorder } from './VoiceRecorder'
 
 export function Composer({ convId, onFiles }: { convId: string; onFiles: (files: File[]) => void }) {
@@ -221,16 +221,7 @@ export function Composer({ convId, onFiles }: { convId: string; onFiles: (files:
             </button>
           </div>
           {panel === 'emoji' ? (
-            <EmojiPicker
-              onEmojiClick={(e) => insertEmoji(e.emoji)}
-              theme={s.settings.theme === 'dark' ? Theme.DARK : Theme.LIGHT}
-              emojiStyle={EmojiStyle.NATIVE}
-              searchPlaceholder="Pesquisar emoji"
-              previewConfig={{ showPreview: false }}
-              lazyLoadEmojis
-              width="100%"
-              height={320}
-            />
+            <EmojiPanel onPick={insertEmoji} theme={s.settings.theme} height={320} />
           ) : (
             <StickerPanel
               onSend={(url) => {

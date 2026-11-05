@@ -13,6 +13,7 @@ import {
   IconLogout,
   IconMoon,
   IconSearch,
+  IconSmile,
   IconStar,
   IconUser,
 } from '../../lib/icons'
@@ -330,6 +331,14 @@ export function SettingsPanel() {
             <div className="muted small">Tocar som ao receber mensagens</div>
           </div>
           <Toggle on={s.settings.sounds} onChange={(v) => s.updateSettings({ sounds: v })} />
+        </div>
+        <div className="settings-row">
+          <IconSmile />
+          <div className="settings-text">
+            <div>Emojis animados</div>
+            <div className="muted small">Emojis que se mexem nas mensagens e reações · animações Noto Emoji (Google), CC BY 4.0</div>
+          </div>
+          <Toggle on={s.settings.animatedEmoji !== false} onChange={(v) => s.updateSettings({ animatedEmoji: v })} />
         </div>
         <div className="settings-row">
           <IconKeyboard />

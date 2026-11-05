@@ -11,8 +11,9 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
 - **Online / visto por último**, **digitando...**
 - **Ticks**: ✓ enviada, ✓✓ entregue, ✓✓ azul lida (usando o relógio do servidor)
 - **Mensagens**: texto com formatação (`*negrito*`, `_itálico_`, `~tachado~`, ` ```mono``` `), links, emojis grandes
-- **Emojis animados** (estilo Teams) nas mensagens, reações e barra de reações: tocam ao aparecer e de novo ao passar o
-  mouse/tocar. Pode desligar em Configurações. 881 emojis têm animação; os outros (ex.: bandeiras) ficam normais
+- **Emojis animados** (estilo Teams): nas mensagens e na barra de reações mexem sem parar enquanto estão na tela;
+  painel de emojis próprio (categorias, recentes, busca em português) em que o emoji se mexe ao passar o mouse.
+  881 emojis têm animação; os demais (ex.: bandeiras) aparecem no mesmo estilo 3D, parados. Pode desligar em Configurações
 - **Mensagens de voz**: no computador, clique no microfone (pausar, descartar, enviar); no celular, segure para gravar,
   solte para enviar, deslize para a esquerda para cancelar ou para cima para travar. Mostra "gravando áudio..." para o outro lado
 - **Mídia**: fotos, vídeos, documentos e áudios (arquivos), com prévia e legenda antes de enviar, câmera, colar imagem (Ctrl+V), arrastar e soltar

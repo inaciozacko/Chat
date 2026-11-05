@@ -1,6 +1,7 @@
 import { memo, useState, type ReactNode } from 'react'
-import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react'
 import { useChat } from '../../store/chat'
+import { Emoji, emojify } from '../emoji/AnimatedEmoji'
+import { EmojiPanel } from '../emoji/EmojiPanel'
 import type { Member, Message, Profile, Reaction } from '../../lib/types'
 import {
   IconBlock,
@@ -68,14 +69,16 @@ function formatInline(text: string, highlight?: string): ReactNode[] {
 }
 
 function hl(text: string, q: string | undefined, key: number): ReactNode {
-  if (!q) return <span key={key}>{text}</span>
+  // emojis no estilo Teams: mexem sem parar enquanto a mensagem está na tela
+  const e = (t: string) => emojify(t, 'loop')
+  if (!q) return <span key={key}>{e(text)}</span>
   const i = text.toLowerCase().indexOf(q.toLowerCase())
-  if (i < 0) return <span key={key}>{text}</span>
+  if (i < 0) return <span key={key}>{e(text)}</span>
   return (
     <span key={key}>
-      {text.slice(0, i)}
-      <mark>{text.slice(i, i + q.length)}</mark>
-      {text.slice(i + q.length)}
+      {e(text.slice(0, i))}
+      <mark>{e(text.slice(i, i + q.length))}</mark>
+      {e(text.slice(i + q.length))}
     </span>
   )
 }
@@ -409,7 +412,9 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
             }}
           >
             {reactionGroups.slice(0, 3).map(([e]) => (
-              <span key={e}>{e}</span>
+              <span key={e}>
+                <Emoji char={e} mode="once" />
+              </span>
             ))}
             {(p.reactions?.length ?? 0) > 1 && <span className="count">{p.reactions!.length}</span>}
           </button>
@@ -448,18 +453,16 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
 
       {fullPicker && (
         <Modal onClose={() => setFullPicker(false)} className="picker-modal">
-          <EmojiPicker
-            onEmojiClick={(e) => {
-              s.react(msg, e.emoji)
-              setFullPicker(false)
-            }}
-            theme={theme === 'dark' ? Theme.DARK : Theme.LIGHT}
-            emojiStyle={EmojiStyle.NATIVE}
-            searchPlaceholder="Pesquisar emoji"
-            previewConfig={{ showPreview: false }}
-            width={340}
-            height={420}
-          />
+          <div style={{ width: 340, maxWidth: '100%' }}>
+            <EmojiPanel
+              onPick={(e) => {
+                s.react(msg, e)
+                setFullPicker(false)
+              }}
+              theme={theme}
+              height={420}
+            />
+          </div>
         </Modal>
       )}
 
@@ -484,7 +487,9 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
                   {mineR ? 'Você' : prof?.full_name}
                   {mineR && <span className="muted small">Clique para remover</span>}
                 </span>
-                <span className="reaction-emoji">{r.emoji}</span>
+                <span className="reaction-emoji">
+                  <Emoji char={r.emoji} mode="once" />
+                </span>
               </div>
             )
           })}
@@ -569,8 +574,8 @@ function ReactionBar({
       <div className="reaction-backdrop" onMouseDown={onClose} />
       <div className="reaction-bar" style={{ top, left }}>
         {QUICK_REACTIONS.map((e) => (
-          <button key={e} className={cx(mine === e && 'mine')} onClick={() => onPick(e)}>
-            {e}
+          <button key={e} className={cx(mine === e && 'mine')} onClick={() => onPick(e)} aria-label={e}>
+            <Emoji char={e} mode="loop" />
           </button>
         ))}
         <button className="more" onClick={onMore} aria-label="Mais emojis">

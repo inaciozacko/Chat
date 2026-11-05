@@ -2,6 +2,16 @@
    Zap — estilos (layout inspirado no WhatsApp Web)
    ===================================================================== */
 
+/* criador de figurinhas: botão "Remover fundo com IA" */
+.sc-ai-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 :root {
   --green: #00a884;
   --green-dark: #008069;
@@ -4420,4 +4430,183 @@ canvas.sticker-img {
 .composer.recording .mic-wrap,
 .composer.recording .rec-send {
   margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------ emojis animados */
+.anim-emoji {
+  position: relative;
+  display: inline-block;
+  width: 1.3em;
+  height: 1.3em;
+  margin: 0 0.04em;
+  vertical-align: -0.3em;
+  line-height: 1;
+}
+/* o emoji de verdade continua ali (copiar/selecionar), invisível sob a imagem/animação */
+.anim-emoji-char {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1em;
+  opacity: 0;
+}
+.anim-emoji.no-img:not(.ready) .anim-emoji-char {
+  opacity: 1;
+}
+.anim-emoji-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+.anim-emoji.ready .anim-emoji-img {
+  visibility: hidden;
+}
+.anim-emoji-box {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.anim-emoji-box svg {
+  display: block;
+}
+.big-emoji .anim-emoji {
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: -0.15em;
+}
+.reaction-bar .anim-emoji {
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: middle;
+}
+.reactions .anim-emoji {
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.25em;
+}
+
+/* painel de emojis (estilo Teams) */
+.emoji-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  min-height: 0;
+}
+.emoji-panel-top {
+  padding: 8px 12px 4px;
+}
+.emoji-search {
+  width: 100%;
+  height: 34px;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: var(--bg-search);
+  color: var(--text);
+  font-size: 14px;
+}
+.emoji-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.emoji-tabs button {
+  flex-shrink: 0;
+  height: 36px;
+  min-width: 36px;
+  padding: 0 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 3px solid transparent;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s;
+}
+.emoji-tabs button img {
+  width: 22px;
+  height: 22px;
+}
+.emoji-tabs button:hover {
+  background: var(--bg-hover);
+  opacity: 1;
+}
+.emoji-tabs button.on {
+  opacity: 1;
+  border-bottom-color: var(--green);
+  border-radius: 8px 8px 0 0;
+}
+.emoji-tabs .emoji-tab-all {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.emoji-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  position: relative;
+}
+.emoji-scroll h4 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-panel);
+  margin: 0;
+  padding: 8px 4px 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+}
+.emoji-cell {
+  height: 42px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  transition: background 0.12s, transform 0.12s;
+}
+.emoji-cell:hover {
+  background: var(--bg-hover);
+  transform: scale(1.12);
+}
+.emoji-cell .anim-emoji {
+  width: 1.15em;
+  height: 1.15em;
+  margin: 0;
+  vertical-align: middle;
+}
+.emoji-empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.emoji-all {
+  flex: 1;
+  min-height: 0;
+}
+.emoji-all .EmojiPickerReact {
+  --epr-bg-color: var(--bg-panel);
+  --epr-category-label-bg-color: var(--bg-panel);
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+.picker-modal .emoji-panel {
+  border-radius: 12px;
+  overflow: hidden;
 }
