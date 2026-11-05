@@ -1,0 +1,485 @@
+-- =====================================================================
+--  Zap Chat — schema completo para Supabase
+--  Rode este arquivo inteiro no SQL Editor do seu projeto Supabase.
+--  Ele é idempotente o suficiente para ser rodado de novo em caso de erro.
+-- =====================================================================
+
+create extension if not exists pgcrypto;
+
+-- ---------------------------------------------------------------------
+-- TABELAS
+-- ---------------------------------------------------------------------
+
+create table if not exists public.profiles (
+  id          uuid primary key references auth.users(id) on delete cascade,
+  username    text unique,
+  full_name   text not null default '',
+  phone       text,
+  about       text not null default 'Olá! Eu estou usando o Zap.',
+  avatar_url  text,
+  last_seen   timestamptz not null default now(),
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists public.conversations (
+  id               uuid primary key default gen_random_uuid(),
+  is_group         boolean not null default false,
+  name             text,
+  description      text,
+  avatar_url       text,
+  created_by       uuid references public.profiles(id) on delete set null,
+  created_at       timestamptz not null default now(),
+  last_message_at  timestamptz not null default now()
+);
+
+create table if not exists public.conversation_members (
+  conversation_id    uuid not null references public.conversations(id) on delete cascade,
+  user_id            uuid not null references public.profiles(id) on delete cascade,
+  role               text not null default 'member' check (role in ('admin','member')),
+  joined_at          timestamptz not null default now(),
+  last_read_at       timestamptz not null default now(),
+  last_delivered_at  timestamptz not null default now(),
+  cleared_at         timestamptz not null default 'epoch',
+  pinned             boolean not null default false,
+  archived           boolean not null default false,
+  muted              boolean not null default false,
+  marked_unread      boolean not null default false,
+  primary key (conversation_id, user_id)
+);
+create index if not exists conversation_members_user_idx on public.conversation_members(user_id);
+
+create table if not exists public.messages (
+  id                    uuid primary key default gen_random_uuid(),
+  conversation_id       uuid not null references public.conversations(id) on delete cascade,
+  sender_id             uuid references public.profiles(id) on delete set null,
+  type                  text not null default 'text'
+                        check (type in ('text','image','video','audio','document','sticker','system')),
+  content               text,
+  media_url             text,
+  media_name            text,
+  media_size            bigint,
+  media_mime            text,
+  media_duration        numeric,
+  reply_to              uuid references public.messages(id) on delete set null,
+  forwarded             boolean not null default false,
+  edited_at             timestamptz,
+  deleted_for_everyone  boolean not null default false,
+  created_at            timestamptz not null default now()
+);
+create index if not exists messages_conv_created_idx on public.messages(conversation_id, created_at desc);
+
+create table if not exists public.message_reactions (
+  message_id  uuid not null references public.messages(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  emoji       text not null,
+  created_at  timestamptz not null default now(),
+  primary key (message_id, user_id)
+);
+
+-- "Apagar para mim"
+create table if not exists public.message_hidden (
+  message_id  uuid not null references public.messages(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  primary key (message_id, user_id)
+);
+
+create table if not exists public.starred_messages (
+  message_id  uuid not null references public.messages(id) on delete cascade,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  primary key (message_id, user_id)
+);
+
+-- Coleção pessoal de figurinhas
+create table if not exists public.stickers (
+  id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null references public.profiles(id) on delete cascade,
+  image_url   text not null,
+  storage_path text,
+  emoji       text,
+  favorite    boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+create index if not exists stickers_owner_idx on public.stickers(owner_id, created_at desc);
+
+-- Status (stories de 24h)
+create table if not exists public.statuses (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  type        text not null check (type in ('text','image')),
+  content     text,
+  media_url   text,
+  bg_color    text,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null default now() + interval '24 hours'
+);
+create index if not exists statuses_user_idx on public.statuses(user_id, created_at desc);
+
+create table if not exists public.status_views (
+  status_id  uuid not null references public.statuses(id) on delete cascade,
+  viewer_id  uuid not null references public.profiles(id) on delete cascade,
+  viewed_at  timestamptz not null default now(),
+  primary key (status_id, viewer_id)
+);
+
+-- ---------------------------------------------------------------------
+-- FUNÇÕES AUXILIARES (security definer evita recursão de RLS)
+-- ---------------------------------------------------------------------
+
+create or replace function public.is_member(conv uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.conversation_members
+    where conversation_id = conv and user_id = auth.uid()
+  );
+$$;
+
+create or replace function public.is_admin(conv uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.conversation_members
+    where conversation_id = conv and user_id = auth.uid() and role = 'admin'
+  );
+$$;
+
+create or replace function public.shares_conversation(other uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select other = auth.uid() or exists (
+    select 1
+    from public.conversation_members a
+    join public.conversation_members b on a.conversation_id = b.conversation_id
+    where a.user_id = auth.uid() and b.user_id = other
+  );
+$$;
+
+create or replace function public.can_see_message(msg uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.messages m
+    join public.conversation_members cm on cm.conversation_id = m.conversation_id
+    where m.id = msg and cm.user_id = auth.uid()
+  );
+$$;
+
+-- Usada pelas policies do Realtime (canais privados "conv:<uuid>")
+create or replace function public.can_access_topic(topic text)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+begin
+  if topic ~ '^conv:[0-9a-fA-F-]{36}$' then
+    return public.is_member(substring(topic from 6)::uuid);
+  end if;
+  return false;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- TRIGGERS
+-- ---------------------------------------------------------------------
+
+-- Cria o perfil automaticamente quando alguém se cadastra
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  uname text := nullif(lower(new.raw_user_meta_data->>'username'), '');
+begin
+  -- nome de usuário já em uso: cadastra sem ele (pode ser definido depois no perfil)
+  if uname is not null and exists (select 1 from public.profiles where username = uname) then
+    uname := null;
+  end if;
+  insert into public.profiles (id, full_name, username, phone)
+  values (
+    new.id,
+    coalesce(nullif(new.raw_user_meta_data->>'full_name', ''), split_part(new.email, '@', 1)),
+    uname,
+    nullif(new.raw_user_meta_data->>'phone', '')
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Atualiza last_message_at da conversa
+create or replace function public.touch_conversation()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update public.conversations set last_message_at = new.created_at where id = new.conversation_id;
+  -- quem envia já leu tudo até aqui
+  if new.sender_id is not null then
+    update public.conversation_members
+       set last_read_at = new.created_at, last_delivered_at = new.created_at, marked_unread = false
+     where conversation_id = new.conversation_id and user_id = new.sender_id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_message_created on public.messages;
+create trigger on_message_created
+  after insert on public.messages
+  for each row execute function public.touch_conversation();
+
+-- ---------------------------------------------------------------------
+-- RPCs
+-- ---------------------------------------------------------------------
+
+-- Abre (ou cria) uma conversa 1:1
+create or replace function public.get_or_create_direct(other uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare conv uuid;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+
+  select c.id into conv
+  from public.conversations c
+  join public.conversation_members a on a.conversation_id = c.id and a.user_id = auth.uid()
+  join public.conversation_members b on b.conversation_id = c.id and b.user_id = other
+  where not c.is_group
+    and (other <> auth.uid() or (select count(*) from public.conversation_members x where x.conversation_id = c.id) = 1)
+  limit 1;
+
+  if conv is not null then return conv; end if;
+
+  insert into public.conversations (is_group, created_by) values (false, auth.uid()) returning id into conv;
+  insert into public.conversation_members (conversation_id, user_id, role) values (conv, auth.uid(), 'admin');
+  if other <> auth.uid() then
+    insert into public.conversation_members (conversation_id, user_id, role) values (conv, other, 'admin');
+  end if;
+  return conv;
+end;
+$$;
+
+-- Cria grupo
+create or replace function public.create_group(group_name text, member_ids uuid[], group_avatar text default null, group_description text default null)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare conv uuid; m uuid;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  insert into public.conversations (is_group, name, avatar_url, description, created_by)
+  values (true, group_name, group_avatar, group_description, auth.uid()) returning id into conv;
+
+  insert into public.conversation_members (conversation_id, user_id, role) values (conv, auth.uid(), 'admin');
+  foreach m in array member_ids loop
+    if m <> auth.uid() then
+      insert into public.conversation_members (conversation_id, user_id, role)
+      values (conv, m, 'member') on conflict do nothing;
+    end if;
+  end loop;
+
+  insert into public.messages (conversation_id, sender_id, type, content)
+  values (conv, auth.uid(), 'system', 'created_group:' || group_name);
+  return conv;
+end;
+$$;
+
+-- Adiciona participantes (apenas admin)
+create or replace function public.add_group_members(conv uuid, member_ids uuid[])
+returns void language plpgsql security definer set search_path = public as $$
+declare m uuid;
+begin
+  if not public.is_admin(conv) then raise exception 'only admins can add members'; end if;
+  foreach m in array member_ids loop
+    insert into public.conversation_members (conversation_id, user_id, role)
+    values (conv, m, 'member') on conflict do nothing;
+    insert into public.messages (conversation_id, sender_id, type, content)
+    values (conv, auth.uid(), 'system', 'added:' || m::text);
+  end loop;
+end;
+$$;
+
+-- Remove participante (admin) ou sai do grupo (próprio usuário)
+create or replace function public.remove_group_member(conv uuid, member uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if member <> auth.uid() and not public.is_admin(conv) then
+    raise exception 'only admins can remove members';
+  end if;
+  insert into public.messages (conversation_id, sender_id, type, content)
+  values (conv, auth.uid(), 'system', case when member = auth.uid() then 'left' else 'removed:' || member::text end);
+  delete from public.conversation_members where conversation_id = conv and user_id = member;
+  -- se ninguém sobrou como admin, promove o mais antigo
+  if not exists (select 1 from public.conversation_members where conversation_id = conv and role = 'admin') then
+    update public.conversation_members set role = 'admin'
+     where conversation_id = conv and user_id = (
+       select user_id from public.conversation_members where conversation_id = conv order by joined_at limit 1
+     );
+  end if;
+end;
+$$;
+
+create or replace function public.set_member_role(conv uuid, member uuid, new_role text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin(conv) then raise exception 'only admins'; end if;
+  update public.conversation_members set role = new_role where conversation_id = conv and user_id = member;
+end;
+$$;
+
+-- Registra evento de grupo (renomeou, trocou imagem...) como mensagem de sistema
+create or replace function public.log_group_event(conv uuid, note text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_member(conv) then raise exception 'not a member'; end if;
+  if note !~ '^(renamed:.*|changed_icon|changed_description)$' then raise exception 'invalid event'; end if;
+  insert into public.messages (conversation_id, sender_id, type, content) values (conv, auth.uid(), 'system', note);
+end;
+$$;
+
+-- Confirmações de leitura/entrega usando o relógio do servidor
+create or replace function public.mark_read(conv uuid)
+returns void language sql security definer set search_path = public as $$
+  update public.conversation_members
+     set last_read_at = now(), last_delivered_at = greatest(last_delivered_at, now()), marked_unread = false
+   where conversation_id = conv and user_id = auth.uid();
+$$;
+
+create or replace function public.mark_delivered(conv uuid default null)
+returns void language sql security definer set search_path = public as $$
+  update public.conversation_members
+     set last_delivered_at = now()
+   where user_id = auth.uid() and (conv is null or conversation_id = conv)
+     and last_delivered_at < (select coalesce(max(created_at), 'epoch') from public.messages m
+                              where m.conversation_id = conversation_members.conversation_id);
+$$;
+
+-- Resumo da lista de conversas: última mensagem visível + não lidas
+create or replace function public.chat_summaries()
+returns table (conversation_id uuid, last_message jsonb, unread_count int)
+language sql stable security definer set search_path = public as $$
+  select cm.conversation_id,
+    (select to_jsonb(m) from public.messages m
+      where m.conversation_id = cm.conversation_id
+        and m.created_at > cm.cleared_at
+        and not exists (select 1 from public.message_hidden h where h.message_id = m.id and h.user_id = auth.uid())
+      order by m.created_at desc limit 1) as last_message,
+    (select count(*)::int from public.messages m
+      where m.conversation_id = cm.conversation_id
+        and m.created_at > cm.last_read_at
+        and m.created_at > cm.cleared_at
+        and m.sender_id is distinct from auth.uid()
+        and m.type <> 'system') as unread_count
+  from public.conversation_members cm
+  where cm.user_id = auth.uid();
+$$;
+
+-- ---------------------------------------------------------------------
+-- RLS
+-- ---------------------------------------------------------------------
+
+alter table public.profiles             enable row level security;
+alter table public.conversations        enable row level security;
+alter table public.conversation_members enable row level security;
+alter table public.messages             enable row level security;
+alter table public.message_reactions    enable row level security;
+alter table public.message_hidden       enable row level security;
+alter table public.starred_messages     enable row level security;
+alter table public.stickers             enable row level security;
+alter table public.statuses             enable row level security;
+alter table public.status_views         enable row level security;
+
+-- profiles
+drop policy if exists "profiles read"   on public.profiles;
+drop policy if exists "profiles update" on public.profiles;
+create policy "profiles read"   on public.profiles for select to authenticated using (true);
+create policy "profiles update" on public.profiles for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+
+-- conversations
+drop policy if exists "conv read"   on public.conversations;
+drop policy if exists "conv update" on public.conversations;
+create policy "conv read"   on public.conversations for select to authenticated using (public.is_member(id));
+create policy "conv update" on public.conversations for update to authenticated using (public.is_member(id)) with check (public.is_member(id));
+
+-- conversation_members
+drop policy if exists "members read"       on public.conversation_members;
+drop policy if exists "members update own" on public.conversation_members;
+create policy "members read"       on public.conversation_members for select to authenticated using (public.is_member(conversation_id));
+create policy "members update own" on public.conversation_members for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- messages
+drop policy if exists "messages read"   on public.messages;
+drop policy if exists "messages insert" on public.messages;
+drop policy if exists "messages update" on public.messages;
+create policy "messages read"   on public.messages for select to authenticated using (public.is_member(conversation_id));
+create policy "messages insert" on public.messages for insert to authenticated
+  with check (sender_id = auth.uid() and public.is_member(conversation_id) and type <> 'system');
+create policy "messages update" on public.messages for update to authenticated
+  using (sender_id = auth.uid()) with check (sender_id = auth.uid());
+
+-- reactions
+drop policy if exists "reactions read"  on public.message_reactions;
+drop policy if exists "reactions write" on public.message_reactions;
+create policy "reactions read"  on public.message_reactions for select to authenticated using (public.can_see_message(message_id));
+create policy "reactions write" on public.message_reactions for all to authenticated
+  using (user_id = auth.uid()) with check (user_id = auth.uid() and public.can_see_message(message_id));
+
+-- hidden / starred
+drop policy if exists "hidden own"  on public.message_hidden;
+drop policy if exists "starred own" on public.starred_messages;
+create policy "hidden own"  on public.message_hidden   for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "starred own" on public.starred_messages for all to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+-- stickers
+drop policy if exists "stickers own" on public.stickers;
+create policy "stickers own" on public.stickers for all to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+
+-- statuses: visíveis para quem tem conversa com o autor
+drop policy if exists "statuses read"   on public.statuses;
+drop policy if exists "statuses write"  on public.statuses;
+drop policy if exists "statuses delete" on public.statuses;
+create policy "statuses read"   on public.statuses for select to authenticated using (expires_at > now() and public.shares_conversation(user_id));
+create policy "statuses write"  on public.statuses for insert to authenticated with check (user_id = auth.uid());
+create policy "statuses delete" on public.statuses for delete to authenticated using (user_id = auth.uid());
+
+drop policy if exists "status views insert" on public.status_views;
+drop policy if exists "status views read"   on public.status_views;
+create policy "status views insert" on public.status_views for insert to authenticated with check (viewer_id = auth.uid());
+create policy "status views read"   on public.status_views for select to authenticated using (
+  viewer_id = auth.uid() or exists (select 1 from public.statuses s where s.id = status_id and s.user_id = auth.uid())
+);
+
+-- ---------------------------------------------------------------------
+-- REALTIME
+-- ---------------------------------------------------------------------
+
+do $$
+declare t text;
+begin
+  foreach t in array array['messages','message_reactions','conversation_members','conversations','profiles','statuses'] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+-- Canais privados de broadcast/presence por conversa (digitando..., chamadas)
+drop policy if exists "conv topic read"  on realtime.messages;
+drop policy if exists "conv topic write" on realtime.messages;
+create policy "conv topic read"  on realtime.messages for select to authenticated using (public.can_access_topic(realtime.topic()));
+create policy "conv topic write" on realtime.messages for insert to authenticated with check (public.can_access_topic(realtime.topic()));
+
+-- ---------------------------------------------------------------------
+-- STORAGE (buckets públicos; cada usuário só escreve na própria pasta <uid>/...)
+-- ---------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public) values
+  ('avatars', 'avatars', true),
+  ('media', 'media', true),
+  ('stickers', 'stickers', true)
+on conflict (id) do update set public = excluded.public;
+
+drop policy if exists "zap upload own folder" on storage.objects;
+drop policy if exists "zap update own folder" on storage.objects;
+drop policy if exists "zap delete own folder" on storage.objects;
+create policy "zap upload own folder" on storage.objects for insert to authenticated
+  with check (bucket_id in ('avatars','media','stickers') and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "zap update own folder" on storage.objects for update to authenticated
+  using (bucket_id in ('avatars','media','stickers') and (storage.foldername(name))[1] = auth.uid()::text);
+create policy "zap delete own folder" on storage.objects for delete to authenticated
+  using (bucket_id in ('avatars','media','stickers') and (storage.foldername(name))[1] = auth.uid()::text);
