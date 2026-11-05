@@ -264,6 +264,43 @@ export function EditableField({
   )
 }
 
+/**
+ * Toque longo (celular): abre o menu de opções como no app. No iPhone não existe "clique direito",
+ * então sem isso não haveria como responder, apagar, reagir etc. pelo toque.
+ */
+export function useLongPress(onLong: (pos: { x: number; y: number }, el: HTMLElement) => void, ms = 450) {
+  const timer = useRef<number | undefined>(undefined)
+  const start = useRef<{ x: number; y: number } | null>(null)
+  const fired = useRef(false)
+  const cb = useRef(onLong)
+  cb.current = onLong
+  const cancel = () => window.clearTimeout(timer.current)
+  return {
+    onTouchStart: (e: React.TouchEvent<HTMLElement>) => {
+      const t = e.touches[0]
+      if (!t || e.touches.length > 1) return
+      start.current = { x: t.clientX, y: t.clientY }
+      fired.current = false
+      const el = e.currentTarget
+      cancel()
+      timer.current = window.setTimeout(() => {
+        fired.current = true
+        navigator.vibrate?.(25)
+        cb.current(start.current!, el)
+      }, ms)
+    },
+    onTouchMove: (e: React.TouchEvent<HTMLElement>) => {
+      const t = e.touches[0]
+      if (t && start.current && Math.hypot(t.clientX - start.current.x, t.clientY - start.current.y) > 10) cancel()
+    },
+    onTouchEnd: (e: React.TouchEvent<HTMLElement>) => {
+      cancel()
+      if (fired.current) e.preventDefault() // não dispara o "clique" depois do toque longo
+    },
+    onTouchCancel: cancel,
+  }
+}
+
 /** Input de arquivo escondido acionado por função */
 export function useFilePicker(accept: string, onPick: (files: File[]) => void, multiple = false) {
   const ref = useRef<HTMLInputElement | null>(null)

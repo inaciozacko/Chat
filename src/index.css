@@ -3990,3 +3990,257 @@ canvas.sticker-img {
 .call-back {
   color: var(--green);
 }
+
+/* métodos de remoção de fundo no criador de figurinhas */
+.sc-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sc-method-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sc-method {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 5px 12px;
+  font-size: 13px;
+  color: var(--text);
+}
+.sc-method:hover {
+  background: var(--bg-hover);
+}
+.sc-method.on {
+  border-color: var(--green);
+  background: rgba(0, 168, 132, 0.12);
+  color: var(--green-dark);
+  font-weight: 500;
+}
+:root[data-theme='dark'] .sc-method.on {
+  color: var(--green);
+}
+
+/* =====================================================================
+   CELULAR (reforço) — fica no fim do arquivo para ter prioridade
+   ===================================================================== */
+
+/* altura real da tela no celular (100% / 100vh ignoram a barra do navegador e o teclado) */
+.app {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* evita o menu "copiar/salvar imagem" do iPhone ao segurar mensagens e conversas */
+.msg-row,
+.chat-item {
+  -webkit-touch-callout: none;
+}
+.chat-item {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (max-width: 720px) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+
+  /* uma tela por vez: lista OU conversa, como no app */
+  .nav-rail {
+    display: none !important;
+  }
+  .sidebar {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    border-right: 0 !important;
+  }
+  .main {
+    display: none !important;
+  }
+  .app.has-chat .sidebar {
+    display: none !important;
+  }
+  .app.has-chat .main {
+    display: flex !important;
+    width: 100%;
+  }
+  .chat-header {
+    border-left: 0;
+  }
+
+  /* iPhone dá zoom em campos com fonte < 16px: mantém 16px */
+  input,
+  textarea,
+  select,
+  .composer-input textarea,
+  .search-input input {
+    font-size: 16px !important;
+  }
+
+  /* cabeçalhos e listas no tamanho do app */
+  .sidebar-header,
+  .panel-header {
+    height: 58px;
+    padding-left: 16px;
+    padding-right: 6px;
+  }
+  .chat-item {
+    padding: 0 12px;
+  }
+  .chat-item-title {
+    font-size: 16.5px;
+  }
+  .chips {
+    padding: 2px 12px 10px;
+  }
+  .search-bar {
+    padding: 4px 12px 8px;
+  }
+  .chevron {
+    display: none;
+  }
+
+  /* conversa */
+  .chat-header {
+    height: 58px;
+    padding: 0 4px;
+  }
+  .chat-header-main {
+    gap: 10px;
+  }
+  .header-actions .icon-btn {
+    width: 38px;
+    height: 38px;
+  }
+  .messages-inner {
+    padding: 8px 8px 8px;
+  }
+  .msg-row {
+    padding: 0 6px;
+  }
+  .bubble {
+    max-width: 86%;
+  }
+  .bubble.audio {
+    min-width: 0;
+    width: 86%;
+  }
+  .msg-media {
+    min-width: 0;
+    max-width: 70vw;
+  }
+  .sticker-img {
+    width: 150px;
+    height: 150px;
+  }
+  .msg-chevron {
+    opacity: 0.85;
+  }
+  .composer {
+    padding: 4px 4px;
+    gap: 2px;
+    min-height: 56px;
+  }
+  .composer-input {
+    padding-right: 8px;
+  }
+  .composer-panel .EmojiPickerReact {
+    max-height: 42dvh;
+  }
+  .sticker-panel {
+    height: 42dvh;
+  }
+  .sticker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  }
+  .scroll-bottom {
+    right: 10px;
+  }
+
+  /* painéis e modais em tela cheia */
+  .right-panel {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    z-index: 40;
+  }
+  .modal-backdrop {
+    padding: 0;
+  }
+  .modal.sticker-creator,
+  .modal.list-modal,
+  .modal.media-modal {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+  }
+  .modal.confirm {
+    width: calc(100vw - 32px);
+  }
+  .modal.announcement-modal {
+    width: calc(100vw - 24px);
+  }
+  .menu {
+    max-width: calc(100vw - 16px);
+  }
+  .sc-body {
+    padding: 12px;
+  }
+  .sc-stage {
+    height: 42dvh;
+  }
+
+  /* status, chamada, lightbox */
+  .status-stage {
+    width: 100%;
+  }
+  .call-local {
+    width: 32vw;
+    right: 12px;
+    bottom: 130px;
+  }
+  .call-controls {
+    bottom: calc(28px + env(safe-area-inset-bottom));
+    gap: 18px;
+  }
+  .lightbox-stage {
+    padding: 6px 6px 16px;
+  }
+  .media-preview-bottom {
+    padding: 10px 12px calc(14px + env(safe-area-inset-bottom));
+  }
+  .media-preview-stage {
+    padding: 10px;
+  }
+
+  /* barra inferior acima da área do gesto do iPhone */
+  .bottom-nav {
+    padding-bottom: calc(6px + env(safe-area-inset-bottom));
+  }
+  .composer-wrap {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* login */
+  .auth-top {
+    padding: 18px 0 24px;
+  }
+  .auth-card {
+    padding: 24px 18px;
+    gap: 24px;
+  }
+  .auth-card h1 {
+    font-size: 22px;
+    margin-bottom: 16px;
+  }
+  .auth-card ol {
+    font-size: 15px;
+  }
+}

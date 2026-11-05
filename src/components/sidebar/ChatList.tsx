@@ -10,7 +10,7 @@ import {
   IconSearch,
   IconClose,
 } from '../../lib/icons'
-import { Avatar, Confirm, Menu, Ticks, type MenuItem } from '../common'
+import { Avatar, Confirm, Menu, Ticks, useLongPress, type MenuItem } from '../common'
 import {
   conversationTitle,
   cx,
@@ -31,7 +31,14 @@ export function ChatList({ archived = false }: { archived?: boolean }) {
   const uid = s.session!.user.id
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; items: MenuItem[] } | null>(null)
+  const [menu, setMenu] = useState<{ anchor: HTMLElement | { x: number; y: number }; items: MenuItem[] } | null>(
+    null,
+  )
+  // toque longo no celular abre o mesmo menu do clique direito
+  const longPress = useLongPress((pos, el) => {
+    const conv = s.conversations[el.dataset.conv ?? '']
+    if (conv) openMenuAt(pos, conv)
+  })
   const [confirm, setConfirm] = useState<{ text: string; label: string; action: () => void } | null>(null)
 
   const items = useMemo(() => {
@@ -81,6 +88,10 @@ export function ChatList({ archived = false }: { archived?: boolean }) {
   function openMenu(e: React.MouseEvent, conv: Conversation) {
     e.stopPropagation()
     e.preventDefault()
+    openMenuAt(e.currentTarget as HTMLElement, conv)
+  }
+
+  function openMenuAt(anchor: HTMLElement | { x: number; y: number }, conv: Conversation) {
     const mine = s.members[conv.id]?.find((m) => m.user_id === uid)
     if (!mine) return
     const title = conversationTitle(conv, s.members[conv.id], s.profiles, uid)
@@ -129,7 +140,7 @@ export function ChatList({ archived = false }: { archived?: boolean }) {
           }),
       },
     ]
-    setMenu({ anchor: e.currentTarget as HTMLElement, items: list })
+    setMenu({ anchor, items: list })
   }
 
   const [headerMenu, setHeaderMenu] = useState<HTMLElement | null>(null)
@@ -234,8 +245,10 @@ export function ChatList({ archived = false }: { archived?: boolean }) {
             <div
               key={conv.id}
               className={cx('chat-item', s.activeId === conv.id && 'active')}
+              data-conv={conv.id}
               onClick={() => s.openChat(conv.id)}
               onContextMenu={(e) => openMenu(e, conv)}
+              {...longPress}
             >
               <Avatar url={avatar} group={conv.is_group} />
               <div className="chat-item-body">

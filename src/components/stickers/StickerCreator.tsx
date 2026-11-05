@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useChat } from '../../store/chat'
 import {
-  aiMask,
+  METHOD_LABEL,
+  autoMaskGif,
+  autoMaskStatic,
+  colorKeyMask,
+  scoreMask,
+  type Method,
+  type StaticResult,
+} from '../../lib/bgremoval'
+import {
   buildSticker,
-  coverage,
   effectiveAlpha,
   floodSelect,
   loadSource,
@@ -39,8 +46,15 @@ export function StickerCreator() {
   const s = useChat()
   const [file, setFile] = useState<Blob | null>(s.stickerCreator?.file ?? null)
   const [source, setSource] = useState<Source | null>(null)
-  const [aiOn, setAiOn] = useState(true)
-  const [aiMasks, setAiMasks] = useState<Uint8Array[] | null>(null)
+  // remoção automática (várias estratégias, escolhe a melhor); ligada para imagens e GIFs
+  const [autoOn, setAutoOn] = useState(true)
+  const [auto, setAuto] = useState<{
+    masks: Uint8Array[]
+    label: string
+    score: number
+    statics?: StaticResult
+  } | null>(null)
+  const [method, setMethod] = useState<Method | null>(null)
   const [progress, setProgress] = useState<{ label: string; ratio: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
@@ -79,7 +93,9 @@ export function StickerCreator() {
     }
     const id = ++job.current
     setSource(null)
-    setAiMasks(null)
+    setAuto(null)
+    setMethod(null)
+    setAutoOn(true)
     setError(null)
     setHint(null)
     setFrameIndex(0)
@@ -91,11 +107,7 @@ export function StickerCreator() {
         undo.current = []
         setVersion((v) => v + 1)
         setSource(src)
-        // GIF: IA quadro a quadro é lenta, então começa desligada (muitos GIFs já têm fundo transparente)
-        const transparent = coverage(ownAlpha(src.frames[0])) < 0.98
-        setAiOn(!src.animated && !transparent)
         if (src.animated) setPlaying(true)
-        if (transparent) setHint('A imagem já tem fundo transparente. Ajuste com o pincel ou a varinha se precisar.')
       })
       .catch((e) => {
         console.error(e)
@@ -105,47 +117,61 @@ export function StickerCreator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file])
 
-  // 2) roda a IA quando ligada (uma vez por imagem; em GIFs, quadro a quadro)
+  // 2) remoção automática: tenta várias estratégias e fica com a melhor (imagens e GIFs)
   useEffect(() => {
-    if (!source || !aiOn || aiMasks) return
+    if (!source || !autoOn || auto) return
     const id = ++job.current
+    const alive = () => id === job.current
+    const prog = (label: string, ratio: number) => {
+      if (alive()) setProgress({ label, ratio })
+    }
+    const hintFor = (score: number, label: string) =>
+      setHint(
+        score < 0.5
+          ? 'Não consegui separar perfeitamente esta imagem. Experimente outro método acima, ou ajuste com a varinha (clique no fundo) e a borracha.'
+          : `Fundo removido automaticamente (${label}). Ajuste com a borracha ou a varinha se precisar.`,
+      )
     ;(async () => {
       try {
-        const masks: Uint8Array[] = []
-        const n = source.frames.length
-        for (let i = 0; i < n; i++) {
-          if (id !== job.current) return
-          setProgress({ label: n > 1 ? `Removendo fundo… quadro ${i + 1} de ${n}` : 'Removendo fundo…', ratio: i / n })
-          masks.push(
-            await aiMask(source.frames[i], (label, ratio) => id === job.current && setProgress({ label, ratio })),
-          )
+        if (source.animated) {
+          const r = await autoMaskGif(source.frames, prog, alive)
+          if (!alive()) return
+          setAuto({ masks: r.masks, label: r.method, score: r.score })
+          hintFor(r.score, r.method)
+        } else {
+          const r = await autoMaskStatic(source.frames[0], prog, alive)
+          if (!alive()) return
+          setAuto({ masks: [r.candidates[r.best]!], label: METHOD_LABEL[r.best], score: r.scores[r.best]!, statics: r })
+          setMethod(r.best)
+          hintFor(r.scores[r.best]!, METHOD_LABEL[r.best])
         }
-        if (id !== job.current) return
-        setAiMasks(masks)
-        const cov = coverage(masks[0])
-        if (cov < 0.03)
-          setHint('A IA quase não encontrou um objeto. Diminua a sensibilidade, ou desligue a IA e use a varinha no fundo.')
-        else if (cov > 0.96)
-          setHint('A IA não conseguiu separar o fundo desta imagem. Use a varinha mágica clicando no fundo, ou a borracha.')
-        else setHint(null)
       } catch (e) {
+        if (!alive() || (e as Error).message === 'cancelado') return
         console.error(e)
-        if (id === job.current) {
+        // IA indisponível (ex.: sem internet para baixar o modelo): usa a remoção por cor do fundo
+        const keyed = source.frames.map((f) => colorKeyMask(f)?.mask ?? null)
+        if (keyed.every(Boolean)) {
+          const masks = keyed as Uint8Array[]
+          setAuto({ masks, label: 'Cor do fundo', score: scoreMask(source.frames[0], masks[0]) })
+          setError('A IA não pôde ser carregada (verifique a internet). Removi o fundo pela cor.')
+        } else {
           setError('Não foi possível remover o fundo automaticamente. Use a varinha mágica ou a borracha.')
-          setAiOn(false)
+          setAutoOn(false)
         }
       } finally {
-        if (id === job.current) setProgress(null)
+        if (alive()) setProgress(null)
       }
     })()
-  }, [source, aiOn, aiMasks])
+  }, [source, autoOn, auto])
 
-  // máscara base de cada quadro: IA (se ligada e pronta) ou a transparência original da imagem
+  // máscara base de cada quadro: resultado automático (método escolhido) ou a imagem original
   const baseMasks = useMemo(() => {
     if (!source) return null
-    if (aiOn) return aiMasks
-    return source.frames.map(ownAlpha)
-  }, [source, aiOn, aiMasks])
+    if (!autoOn) return source.frames.map(ownAlpha)
+    if (!auto) return null
+    if (auto.statics && method && auto.statics.candidates[method]) return [auto.statics.candidates[method]!]
+    return auto.masks
+  }, [source, autoOn, auto, method])
 
   const fi = Math.min(frameIndex, (source?.frames.length ?? 1) - 1)
 
@@ -434,23 +460,41 @@ export function StickerCreator() {
           <div className="sc-group">
             <div className="sc-group-title">Fundo</div>
             <div className="sc-row">
-              <span>
-                Remover fundo com IA
-                {source?.animated && <small className="muted"> (quadro a quadro, pode demorar)</small>}
-              </span>
+              <span>Remover fundo automaticamente</span>
               <button
-                className={cx('toggle', aiOn && 'on')}
+                className={cx('toggle', autoOn && 'on')}
                 role="switch"
-                aria-checked={aiOn}
+                aria-checked={autoOn}
                 disabled={!!progress || !source}
                 onClick={() => {
                   setError(null)
-                  setAiOn((v) => !v)
+                  setAutoOn((v) => !v)
                 }}
               >
                 <span />
               </button>
             </div>
+            {autoOn && auto?.statics && (
+              <div className="sc-methods">
+                <span className="sc-label">Método (★ = escolhido automaticamente)</span>
+                <div className="sc-method-list">
+                  {(['combinado', 'ia', 'cor', 'original'] as Method[])
+                    .filter((m) => auto.statics!.candidates[m])
+                    .map((m) => (
+                      <button
+                        key={m}
+                        className={cx('sc-method', method === m && 'on')}
+                        onClick={() => setMethod(m)}
+                        title={`Nota ${Math.round((auto.statics!.scores[m] ?? 0) * 100)}/100`}
+                      >
+                        {auto.statics!.best === m && '★ '}
+                        {METHOD_LABEL[m]}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+            {autoOn && auto && !auto.statics && <div className="sc-label">Método usado: {auto.label}</div>}
             <label className="sc-range">
               <span>Sensibilidade</span>
               <input

@@ -13,7 +13,7 @@ import {
   IconSmile,
   IconStar,
 } from '../../lib/icons'
-import { Avatar, Menu, Modal, Ticks, type MenuItem } from '../common'
+import { Avatar, Menu, Modal, Ticks, useLongPress, type MenuItem } from '../common'
 import { AudioPlayer } from './AudioPlayer'
 import { AnimatedSticker } from '../stickers/AnimatedSticker'
 import { isAnimatedUrl } from '../../lib/sticker'
@@ -104,6 +104,10 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
   const { msg, isMine } = p
   const s = useChat.getState()
   const [menu, setMenu] = useState<HTMLElement | { x: number; y: number } | null>(null)
+  // celular: segurar a mensagem abre o menu (responder, reagir, apagar...)
+  const longPress = useLongPress((pos) => {
+    if (!p.selecting) setMenu(pos)
+  })
   const [reactBar, setReactBar] = useState<HTMLElement | null>(null)
   const [fullPicker, setFullPicker] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -325,6 +329,7 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
         e.preventDefault()
         setMenu({ x: e.clientX, y: e.clientY })
       }}
+      {...longPress}
     >
       {p.selecting && (
         <span className={cx('select-box', p.selected && 'on')}>{p.selected && <IconCheck size={14} />}</span>

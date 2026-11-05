@@ -192,14 +192,7 @@ function NavRail() {
         <IconChat />
         {unreadChats > 0 && <span className="rail-badge">{unreadChats}</span>}
       </button>
-      <button
-        className={cx('rail-btn', s.leftPanel === 'status' && 'active')}
-        title="Status"
-        onClick={() => s.set({ leftPanel: 'status' })}
-      >
-        <IconStatus />
-        {hasNewStatus && <span className="rail-dot" />}
-      </button>
+      {/* Ligações logo abaixo de Conversas */}
       <button
         className={cx('rail-btn', s.leftPanel === 'calls' && 'active')}
         title="Ligações"
@@ -207,6 +200,14 @@ function NavRail() {
       >
         <IconPhoneOutline />
         {missedCalls > 0 && <span className="rail-badge red">{missedCalls}</span>}
+      </button>
+      <button
+        className={cx('rail-btn', s.leftPanel === 'status' && 'active')}
+        title="Status"
+        onClick={() => s.set({ leftPanel: 'status' })}
+      >
+        <IconStatus />
+        {hasNewStatus && <span className="rail-dot" />}
       </button>
       <button
         className={cx('rail-btn', s.leftPanel === 'starred' && 'active')}
