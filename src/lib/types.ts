@@ -85,6 +85,19 @@ export type Status = {
   expires_at: string
 }
 
+export type Announcement = {
+  id: string
+  title: string
+  body: string
+  image_url: string | null
+  link_url: string | null
+  link_label: string | null
+  active: boolean
+  created_by: string | null
+  created_at: string
+  expires_at: string | null
+}
+
 export type LeftPanel =
   | 'chats'
   | 'newChat'
@@ -94,5 +107,6 @@ export type LeftPanel =
   | 'starred'
   | 'archived'
   | 'status'
+  | 'announcements'
 
 export type RightPanel = null | 'info' | 'search' | 'starred'

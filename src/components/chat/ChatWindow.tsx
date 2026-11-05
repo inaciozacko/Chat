@@ -302,9 +302,26 @@ function MessageList() {
     setLoadingOlder(false)
   }, [loadingOlder, s, convId])
 
+  // Mantém a conversa "grudada" no fim quando a área muda de tamanho
+  // (painel de emojis/figurinhas, resposta, caixa de texto crescendo, imagens carregando, janela redimensionada)
+  const stick = useRef(true)
+  const inner = useRef<HTMLDivElement>(null)
+  const loaded = !!raw
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !inner.current) return
+    const ro = new ResizeObserver(() => {
+      if (stick.current && !prevHeight.current) el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    ro.observe(inner.current)
+    return () => ro.disconnect()
+  }, [loaded])
+
   const onScroll = () => {
     const el = ref.current!
     const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
     setAtBottom(bottom)
     if (bottom) setNewWhileUp(0)
     if (el.scrollTop < 200) loadOlder()
@@ -354,6 +371,7 @@ function MessageList() {
   return (
     <div className="messages-wrap">
       <div className="messages wallpaper scroll" ref={ref} onScroll={onScroll} style={style}>
+        <div className="messages-inner" ref={inner}>
         {loadingOlder && (
           <div className="center-pad">
             <Spinner size={22} />
@@ -425,11 +443,13 @@ function MessageList() {
         {myMember && !conv.is_group && list.length === 0 && (
           <div className="empty-chat-hint">Envie uma mensagem para começar a conversa 👋</div>
         )}
+        </div>
       </div>
       {!atBottom && (
         <button
           className="scroll-bottom"
           onClick={() => {
+            stick.current = true
             ref.current?.scrollTo({ top: ref.current.scrollHeight, behavior: 'smooth' })
             setNewWhileUp(0)
           }}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { isConfigured, supabase } from './lib/supabase'
 import { startRealtime, stopRealtime, syncConvChannels } from './lib/realtime'
-import { useChat } from './store/chat'
+import { selectUnreadChats, useChat } from './store/chat'
 import { Auth, SetupScreen } from './components/Auth'
 import { Avatar } from './components/common'
 import { ChatList } from './components/sidebar/ChatList'
@@ -12,7 +12,9 @@ import { ChatWindow, Welcome } from './components/chat/ChatWindow'
 import { ForwardModal, Lightbox, RightPanel } from './components/info/InfoPanels'
 import { StickerCreator } from './components/stickers/StickerCreator'
 import { CallScreen } from './components/call/CallScreen'
-import { AppLogo, IconChat, IconGear, IconStarOutline, IconStatus } from './lib/icons'
+import { AnnouncementPopup, AnnouncementsPanel } from './components/announcements/Announcements'
+import { AppLogo, IconChat, IconGear, IconMegaphone, IconStarOutline, IconStatus } from './lib/icons'
+import { isAdminEmail } from './lib/admin'
 import { cx, ts } from './lib/utils'
 
 export default function App() {
@@ -74,11 +76,11 @@ function Main({ session }: { session: Session }) {
     syncConvChannels(convIds ? convIds.split(',') : [])
   }, [convIds])
 
-  // título da aba com total de não lidas
-  const totalUnread = Object.values(s.unread).reduce((a, b) => a + b, 0)
+  // título da aba: número de conversas com mensagens não lidas (não o total de mensagens)
+  const unreadChats = useChat(selectUnreadChats)
   useEffect(() => {
-    document.title = totalUnread ? `(${totalUnread}) Zap` : 'Zap'
-  }, [totalUnread])
+    document.title = unreadChats ? `(${unreadChats}) Zap` : 'Zap'
+  }, [unreadChats])
 
   if (!s.loaded || !s.me) return <Splash />
 
@@ -98,6 +100,8 @@ function Main({ session }: { session: Session }) {
         return <ChatList archived />
       case 'status':
         return <StatusPanel />
+      case 'announcements':
+        return isAdminEmail(session.user.email) ? <AnnouncementsPanel /> : <ChatList />
       default:
         return <ChatList />
     }
@@ -116,6 +120,7 @@ function Main({ session }: { session: Session }) {
       {s.statusViewer && <StatusViewer />}
       {s.statusComposer && <StatusComposer />}
       <CallScreen />
+      <AnnouncementPopup />
       {s.toast && <div className="toast">{s.toast}</div>}
     </div>
   )
@@ -124,9 +129,7 @@ function Main({ session }: { session: Session }) {
 function NavRail() {
   const s = useChat()
   const uid = s.session!.user.id
-  const unreadChats = Object.entries(s.unread).filter(
-    ([id, n]) => n > 0 && !s.members[id]?.find((m) => m.user_id === uid)?.archived,
-  ).length
+  const unreadChats = useChat(selectUnreadChats)
   const hasNewStatus = s.statuses.some(
     (st) => st.user_id !== uid && !s.viewedStatuses.has(st.id) && ts(st.expires_at) > Date.now(),
   )
@@ -152,6 +155,15 @@ function NavRail() {
       >
         <IconStarOutline />
       </button>
+      {isAdminEmail(s.session?.user.email) && (
+        <button
+          className={cx('rail-btn', s.leftPanel === 'announcements' && 'active')}
+          title="Anúncios"
+          onClick={() => s.set({ leftPanel: 'announcements' })}
+        >
+          <IconMegaphone />
+        </button>
+      )}
       <div className="grow" />
       <button
         className={cx('rail-btn', s.leftPanel === 'settings' && 'active')}

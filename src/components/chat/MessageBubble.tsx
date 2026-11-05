@@ -13,8 +13,10 @@ import {
   IconSmile,
   IconStar,
 } from '../../lib/icons'
-import { Menu, Modal, Ticks, type MenuItem } from '../common'
+import { Avatar, Menu, Modal, Ticks, type MenuItem } from '../common'
 import { AudioPlayer } from './AudioPlayer'
+import { AnimatedSticker } from '../stickers/AnimatedSticker'
+import { isAnimatedUrl } from '../../lib/sticker'
 import {
   URL_RE,
   colorFor,
@@ -161,16 +163,43 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
   })()
   const myReaction = p.reactions?.find((r) => r.user_id === p.myId)?.emoji
 
+  // Hora + ticks. Como no original, a meta real fica posicionada no canto inferior direito
+  // e uma cópia invisível ("spacer") vai no fim do texto, reservando exatamente o espaço dela
+  // na última linha (ou empurrando para uma nova linha quando não cabe).
+  const metaInner = (
+    <>
+      {p.starred && <IconStar size={12} />}
+      {msg.edited_at && !deleted && <span className="edited">Editada</span>}
+      <span>{formatTime(msg.created_at)}</span>
+      {isMine && !deleted && <Ticks state={tickState(msg, p.members, p.myId)} />}
+    </>
+  )
+  const spacer = (
+    <span className="meta-spacer" aria-hidden="true">
+      {metaInner}
+    </span>
+  )
+  const hasCaption = !!msg.content && !deleted && (msg.type === 'image' || msg.type === 'video' || msg.type === 'document')
+  const overlayMeta = !deleted && (bare || msg.type === 'image' || msg.type === 'video') && !hasCaption
+
   let body: ReactNode
   if (deleted) {
     body = (
       <div className="msg-deleted">
         <IconBlock size={16} />
-        {isMine ? 'Você apagou esta mensagem' : 'Esta mensagem foi apagada'}
+        <span>
+          {isMine ? 'Você apagou esta mensagem' : 'Esta mensagem foi apagada'}
+          {spacer}
+        </span>
       </div>
     )
   } else if (msg.type === 'sticker') {
-    body = <img className="sticker-img" src={msg.media_url ?? ''} alt="Figurinha" draggable={false} />
+    body = isAnimatedUrl(msg.media_url) ? (
+      // GIF: toca 3 vezes ao aparecer e para; clique para repetir
+      <AnimatedSticker url={msg.media_url!} className="sticker-img" loops={3} />
+    ) : (
+      <img className="sticker-img" src={msg.media_url ?? ''} alt="Figurinha" draggable={false} />
+    )
   } else if (msg.type === 'image') {
     body = (
       <>
@@ -183,7 +212,12 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
           <img src={msg.media_url ?? ''} alt="" loading="lazy" />
           {msg.pending && <div className="media-uploading" />}
         </div>
-        {msg.content && <div className="msg-text caption">{renderText(msg.content, p.searchTerm)}</div>}
+        {msg.content && (
+          <div className="msg-text caption">
+            {renderText(msg.content, p.searchTerm)}
+            {spacer}
+          </div>
+        )}
       </>
     )
   } else if (msg.type === 'video') {
@@ -201,7 +235,12 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
           </span>
           {msg.media_duration ? <span className="video-duration">{formatDuration(Number(msg.media_duration))}</span> : null}
         </div>
-        {msg.content && <div className="msg-text caption">{renderText(msg.content, p.searchTerm)}</div>}
+        {msg.content && (
+          <div className="msg-text caption">
+            {renderText(msg.content, p.searchTerm)}
+            {spacer}
+          </div>
+        )}
       </>
     )
   } else if (msg.type === 'audio') {
@@ -241,7 +280,12 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
             <IconDownload size={22} />
           </span>
         </a>
-        {msg.content && <div className="msg-text caption">{renderText(msg.content, p.searchTerm)}</div>}
+        {msg.content && (
+          <div className="msg-text caption">
+            {renderText(msg.content, p.searchTerm)}
+            {spacer}
+          </div>
+        )}
       </>
     )
   } else {
@@ -255,18 +299,12 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
             Ler mais
           </button>
         )}
+        {!bigEmoji && spacer}
       </div>
     )
   }
 
-  const meta = (
-    <span className={cx('msg-meta', (bare || msg.type === 'image' || msg.type === 'video') && !msg.content && 'overlay')}>
-      {p.starred && <IconStar size={12} />}
-      {msg.edited_at && !deleted && <span className="edited">Editada</span>}
-      <span>{formatTime(msg.created_at)}</span>
-      {isMine && !deleted && <Ticks state={tickState(msg, p.members, p.myId)} />}
-    </span>
-  )
+  const meta = <span className={cx('msg-meta', overlayMeta && 'overlay')}>{metaInner}</span>
 
   return (
     <div
@@ -291,7 +329,19 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
       {p.selecting && (
         <span className={cx('select-box', p.selected && 'on')}>{p.selected && <IconCheck size={14} />}</span>
       )}
-      <div className={cx('bubble', bare && 'bare', p.showTail && !bare && 'tail', msg.type)}>
+      {p.isGroup && !isMine && (
+        <div className="msg-avatar">{p.showTail && <Avatar url={p.sender?.avatar_url} size={28} />}</div>
+      )}
+      <div
+        className={cx(
+          'bubble',
+          bare && 'bare',
+          p.showTail && !bare && 'tail',
+          msg.type,
+          deleted && 'deleted',
+          msg.type === 'document' && !hasCaption && !deleted && 'meta-below',
+        )}
+      >
         {p.showName && !isMine && p.isGroup && !bare && (
           <div className="msg-sender" style={{ color: colorFor(msg.sender_id ?? '') }}>
             {p.sender?.full_name ?? '...'}

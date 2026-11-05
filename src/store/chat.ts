@@ -649,7 +649,8 @@ export const useChat = create<State & Actions>((set, get) => ({
   saveSticker: async (blob, emoji) => {
     const uid = get().session!.user.id
     try {
-      const { url, path } = await uploadFile('stickers', blob, uid, blob.type === 'image/webp' ? 'webp' : 'png')
+      const ext = blob.type === 'image/gif' ? 'gif' : blob.type === 'image/webp' ? 'webp' : 'png'
+      const { url, path } = await uploadFile('stickers', blob, uid, ext)
       const { data, error } = await supabase
         .from('stickers')
         .insert({ owner_id: uid, image_url: url, storage_path: path, emoji: emoji ?? null })
@@ -851,6 +852,22 @@ export const useChat = create<State & Actions>((set, get) => ({
 
   setOnline: (ids) => set({ online: new Set(ids) }),
 }))
+
+/**
+ * Quantas conversas têm mensagens não lidas (não a quantidade de mensagens), como no original:
+ * ignora conversas arquivadas e silenciadas; conta as marcadas manualmente como "não lida".
+ */
+export function selectUnreadChats(s: State) {
+  const uid = s.session?.user.id
+  if (!uid) return 0
+  let n = 0
+  for (const id of Object.keys(s.conversations)) {
+    const mine = s.members[id]?.find((m) => m.user_id === uid)
+    if (!mine || mine.archived || mine.muted) continue
+    if ((s.unread[id] ?? 0) > 0 || mine.marked_unread) n++
+  }
+  return n
+}
 
 // ---------------------------------------------------------------- notificações
 let audioCtx: AudioContext | null = null

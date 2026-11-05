@@ -3,6 +3,8 @@ import { useChat } from '../../store/chat'
 import { IconPlus, IconStar, IconSticker, IconWand } from '../../lib/icons'
 import { Menu, useFilePicker } from '../common'
 import type { Sticker } from '../../lib/types'
+import { isAnimatedUrl } from '../../lib/sticker'
+import { AnimatedSticker } from './AnimatedSticker'
 
 export function StickerPanel({ onSend }: { onSend: (url: string) => void }) {
   const s = useChat()
@@ -27,7 +29,14 @@ export function StickerPanel({ onSend }: { onSend: (url: string) => void }) {
           }}
           title={st.emoji ?? 'Figurinha'}
         >
-          <img src={st.image_url} alt="" loading="lazy" draggable={false} />
+          {isAnimatedUrl(st.image_url) ? (
+            <>
+              <AnimatedSticker url={st.image_url} trigger="hover" />
+              <span className="sticker-gif-tag">GIF</span>
+            </>
+          ) : (
+            <img src={st.image_url} alt="" loading="lazy" draggable={false} />
+          )}
           {st.favorite && <IconStar size={12} className="sticker-fav" />}
         </button>
       ))}

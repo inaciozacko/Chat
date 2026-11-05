@@ -140,7 +140,7 @@ export function ChatList({ archived = false }: { archived?: boolean }) {
         <PanelHeader title="Arquivadas" onBack={() => s.set({ leftPanel: 'chats' })} />
       ) : (
         <div className="sidebar-header">
-          <h1 className="brand">Zap</h1>
+          <h1 className="brand">Conversas</h1>
           <div className="header-actions">
             <button className="icon-btn" title="Nova conversa" onClick={() => s.set({ leftPanel: 'newChat' })}>
               <IconChatPlus />
