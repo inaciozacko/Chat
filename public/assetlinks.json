@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.chat_rho_drab.twa",
+        "sha256_cert_fingerprints": ["2B:20:D5:C9:72:60:33:15:59:9A:22:FE:54:32:74:52:AF:F7:4B:19:50:D8:F6:FA:3F:C7:55:22:AC:93:57:B2"]
+      }
+    }]
