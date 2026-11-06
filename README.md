@@ -68,14 +68,36 @@ Como funciona: depois de enviar uma mensagem ou ligar, o app chama `/api/push`; 
 
 ## App Android
 
-O app é um **PWA** (`public/manifest.webmanifest` + `public/sw.js` + ícones em `public/icons/`), então:
-- **Instalar direto**: abra o site no Chrome do Android → menu ⋮ → *Instalar app*.
-- **APK / Play Store (TWA)**: em [pwabuilder.com](https://www.pwabuilder.com), cole a URL da Vercel →
-  *Package for stores* → *Android*. Guarde o arquivo `signing.keystore` e as senhas (necessários para atualizar o app).
-  Copie o `assetlinks.json` gerado para `public/assetlinks.json` e faça o deploy (o `vercel.json` o publica em
-  `/.well-known/assetlinks.json`) — é isso que tira a barra de endereço do app.
+App **nativo** (Capacitor 8, pacote `app.zap.chat`), montado na nuvem pelo GitHub Actions
+(`.github/workflows/android.yml`) a cada envio — o APK aparece na aba **Releases** do repositório.
+Não precisa instalar Android Studio.
 
-O APK abre o site da Vercel: cada deploy novo já chega ao app, sem gerar outro APK.
+- `capacitor.config.json` — configuração do app; o site vai **dentro** do APK (abre sem internet).
+- `native-android/java/` — código Android: notificações do Firebase com **Responder** e **Marcar como lida**,
+  ligação em tela cheia tocando sem parar, e o **modo emergência** (Nearby Connections).
+- `native-android/res/` — ícones, ícone da barra de notificações e tela de abertura.
+- `native-android/google-services.json` — arquivo do Firebase (do seu projeto).
+- `scripts/android-setup.mjs` — aplica tudo isso no projeto gerado por `npx cap add android`.
+
+Configuração (uma vez):
+1. Supabase: rode [`supabase/native.sql`](supabase/native.sql).
+2. Firebase: crie o projeto, adicione um app Android `app.zap.chat`, baixe o `google-services.json` para
+   `native-android/` e gere uma **chave de conta de serviço** (Configurações do projeto → Contas de serviço).
+3. Vercel: variável `FIREBASE_SERVICE_ACCOUNT` = conteúdo do JSON da conta de serviço.
+4. GitHub (Settings → Secrets and variables → Actions): `ZAP_KEYSTORE_BASE64` e `ZAP_KEYSTORE_PASSWORD`
+   (a chave de assinatura; use **sempre a mesma**, senão o celular não aceita atualizar).
+
+### Modo emergência (sem internet)
+
+Aba **Emergência** no app Android. As mensagens vão **criptografadas** (`src/lib/mesh/crypto.ts`) e chegam por:
+- **Bluetooth/Wi-Fi Direct**, de celular em celular (uns 30–100 m entre cada um), pulando por quem estiver no caminho;
+- **"leva e entrega"**: cada celular guarda as mensagens dos outros (até 7 dias) e entrega quando encontrar o destino;
+- **internet**: qualquer celular que carregue a mensagem e encontre internet a deposita em `mesh_envelopes`,
+  e o destinatário recebe com notificação.
+
+Cada pessoa precisa abrir o app **uma vez com internet** (para publicar sua chave e baixar a dos contatos).
+Atalhos: "Estou bem", "Preciso de ajuda" e "Minha localização" (GPS funciona sem internet) para todos os contatos.
+Se o app abrir sem internet, ele vai direto para o modo emergência.
 
 ## Observações
 

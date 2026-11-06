@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '../../store/chat'
-import { enablePush, pushSupported } from '../../lib/push'
+import { enablePush, notificationPermission, pushSupported, type PermissionValue } from '../../lib/push'
 import {
   IconArchive,
   IconBell,
@@ -31,8 +31,11 @@ type Filter = 'all' | 'unread' | 'groups' | 'pinned'
 /** "Ative as notificações" no topo da lista, enquanto o aparelho ainda não deu (nem negou) a permissão */
 function NotifyBanner() {
   const s = useChat()
-  const [perm, setPerm] = useState(pushSupported() ? Notification.permission : 'denied')
+  const [perm, setPerm] = useState<PermissionValue | null>(null)
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (pushSupported()) notificationPermission().then(setPerm)
+  }, [])
   if (perm !== 'default' || !s.settings.notifications) return null
   return (
     <button
@@ -41,7 +44,7 @@ function NotifyBanner() {
       onClick={async () => {
         setBusy(true)
         await enablePush()
-        setPerm(Notification.permission)
+        setPerm(await notificationPermission())
         setBusy(false)
       }}
     >

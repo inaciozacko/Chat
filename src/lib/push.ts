@@ -1,30 +1,53 @@
 import { supabase } from './supabase'
+import { API_BASE, isNative, Zap } from './native'
 
 /**
- * Notificações push (Web Push), como no WhatsApp: chegam com o app fechado.
- *  1. o aparelho se inscreve no serviço de push do navegador/Android com a chave pública abaixo;
- *  2. a inscrição fica salva no Supabase (tabela push_subscriptions — supabase/push.sql);
- *  3. depois de enviar uma mensagem/ligar, o app chama /api/push (função da Vercel, api/push.js),
- *     que confere tudo no banco e entrega a notificação aos outros participantes;
- *  4. public/sw.js recebe e mostra a notificação.
+ * Notificações push, como no WhatsApp: chegam com o app fechado.
+ *
+ * Navegador / PWA (Web Push):
+ *   o navegador se inscreve com a chave pública abaixo → inscrição salva no Supabase (push_subscriptions)
+ *   → public/sw.js mostra a notificação.
+ * App Android (Firebase):
+ *   o app pega o token do Firebase e gera um segredo do aparelho → salvos no Supabase (native_devices)
+ *   → a parte nativa monta a notificação com "Responder" e "Marcar como lida", que usam o segredo
+ *   para falar com /api/reply sem abrir o app.
+ * Em ambos, depois de enviar uma mensagem/ligar, o app chama /api/push (api/push.js), que avisa os outros.
  */
 export const VAPID_PUBLIC_KEY = 'BIr4I2ta0-gG8oFwZDC-90zoPwnRGnlJrdeN_pwyyDZJhn4n3F5y2BqB8rf8ZFHYVBSxEu3fn85CV-0vvBIg7DA'
 
 /** em `npm run dev` não existe /api; defina VITE_PUSH_API para testar contra a Vercel */
-const PUSH_API = (import.meta.env.VITE_PUSH_API as string | undefined) || (import.meta.env.DEV ? '' : '/api/push')
+const PUSH_API = isNative()
+  ? `${API_BASE}/api/push`
+  : (import.meta.env.VITE_PUSH_API as string | undefined) || (import.meta.env.DEV ? '' : '/api/push')
 
 export type PushState = 'on' | 'off' | 'denied' | 'unsupported' | 'error'
+export type PermissionValue = 'granted' | 'denied' | 'default'
 
 let registration: Promise<ServiceWorkerRegistration | null> | null = null
 let active = false
 
 export function pushSupported() {
+  if (isNative()) return true
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
 
-/** registra o service worker (uma vez). Também é ele que deixa o app "instalável". */
+/** permissão de notificação deste aparelho (no app Android vem do sistema) */
+export async function notificationPermission(): Promise<PermissionValue> {
+  if (isNative()) {
+    try {
+      const p = await Zap.notificationPermission()
+      if (p.enabled) return 'granted'
+      return p.state === 'denied' ? 'denied' : 'default'
+    } catch {
+      return 'default'
+    }
+  }
+  return typeof Notification === 'undefined' ? 'denied' : Notification.permission
+}
+
+/** registra o service worker (uma vez). Também é ele que deixa o site "instalável". */
 export function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return Promise.resolve(null)
+  if (isNative() || !('serviceWorker' in navigator)) return Promise.resolve(null)
   registration ??= navigator.serviceWorker
     .register('/sw.js')
     .then(async (reg) => {
@@ -48,6 +71,7 @@ export function isPushActive() {
  * ligado → inscreve (se já houver permissão) e salva no Supabase; desligado → remove.
  */
 export async function syncPush(enabled: boolean): Promise<PushState> {
+  if (isNative()) return syncNative(enabled)
   if (!pushSupported()) return 'unsupported'
   const reg = await registerServiceWorker()
   if (!reg) return 'unsupported'
@@ -89,8 +113,73 @@ export async function syncPush(enabled: boolean): Promise<PushState> {
   }
 }
 
+// ------------------------------------------------------------------ app Android
+/** segredo aleatório deste aparelho (o banco guarda só o hash) — autoriza responder pela notificação */
+function deviceSecret() {
+  const KEY = 'zap-device-secret'
+  try {
+    let s = localStorage.getItem(KEY)
+    if (!s || s.length < 32) {
+      s = Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('')
+      localStorage.setItem(KEY, s)
+    }
+    return s
+  } catch {
+    return Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+}
+
+/** passa para a parte nativa quem está logado (usado pelas notificações e pelo modo emergência) */
+export async function setNativeSession(userId: string) {
+  if (!isNative()) return
+  await Zap.setSession({ apiBase: API_BASE, secret: deviceSecret(), userId }).catch(() => {})
+}
+
+async function syncNative(enabled: boolean): Promise<PushState> {
+  const uid = (await supabase.auth.getSession()).data.session?.user.id
+  if (!uid) return 'off'
+  if (!enabled) {
+    await removeNative(false)
+    return 'off'
+  }
+  const perm = await notificationPermission()
+  if (perm !== 'granted') {
+    active = false
+    return perm === 'denied' ? 'denied' : 'off'
+  }
+  try {
+    const { token } = await Zap.getPushToken()
+    const secret = deviceSecret()
+    const { error } = await supabase.rpc('save_native_device', { p_token: token, p_secret: secret })
+    if (error) throw error
+    await Zap.setSession({ apiBase: API_BASE, secret, userId: uid })
+    active = true
+    return 'on'
+  } catch (e) {
+    console.warn('Push (Firebase) indisponível:', e)
+    active = false
+    return 'error'
+  }
+}
+
+async function removeNative(signOut: boolean) {
+  try {
+    const { token } = await Zap.getPushToken()
+    await supabase.rpc('delete_native_device', { p_token: token })
+  } catch {
+    /* sem Firebase/sem rede: a função da Vercel limpa aparelhos mortos sozinha */
+  }
+  if (signOut) await Zap.clearSession().catch(() => {})
+  active = false
+}
+
+// ------------------------------------------------------------------ comum
 /** pede permissão (precisa ser chamado num clique) e inscreve */
 export async function enablePush(): Promise<PushState> {
+  if (isNative()) {
+    await Zap.requestNotificationPermission().catch(() => null)
+    return syncPush(true)
+  }
   if (!pushSupported()) return 'unsupported'
   if (Notification.permission === 'default') await Notification.requestPermission()
   return syncPush(true)
@@ -98,6 +187,7 @@ export async function enablePush(): Promise<PushState> {
 
 /** ao sair da conta: este aparelho para de receber as notificações dela */
 export async function removePush() {
+  if (isNative()) return removeNative(true)
   try {
     const reg = await registerServiceWorker()
     const sub = await reg?.pushManager.getSubscription()
@@ -111,8 +201,13 @@ export async function removePush() {
   active = false
 }
 
+type PushRequest =
+  | { type: 'message'; message_id: string }
+  | { type: 'call' | 'call_end'; call_id: string }
+  | { type: 'mesh'; envelope_id: string }
+
 /** pede ao servidor para avisar os outros participantes (não espera, não trava o envio) */
-export function sendPush(body: { type: 'message'; message_id: string } | { type: 'call' | 'call_end'; call_id: string }) {
+export function sendPush(body: PushRequest) {
   if (!PUSH_API) return
   supabase.auth.getSession().then(({ data }) => {
     const token = data.session?.access_token
@@ -128,7 +223,7 @@ export function sendPush(body: { type: 'message'; message_id: string } | { type:
 
 /** notificação mostrada pelo próprio app (quando o push não está disponível) */
 export async function showLocalNotification(title: string, options: NotificationOptions & { data?: unknown }) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  if (isNative() || !('Notification' in window) || Notification.permission !== 'granted') return
   const reg = await registerServiceWorker()
   if (reg) return reg.showNotification(title, { badge: '/icons/badge-96.png', icon: '/icons/icon-192.png', ...options })
   new Notification(title, options) // navegador sem service worker
@@ -136,22 +231,39 @@ export async function showLocalNotification(title: string, options: Notification
 
 /** fecha as notificações de uma conversa (ex.: ao abri-la), como o WhatsApp faz */
 export function clearNotifications(tag: string) {
+  if (isNative()) {
+    Zap.clearNotifications(tag.startsWith('call-') ? { callId: tag.slice(5) } : { conversationId: tag }).catch(() => {})
+    return
+  }
   navigator.serviceWorker?.controller?.postMessage({ type: 'clear', tag })
 }
 
 export function markCallHandled(callId: string) {
-  navigator.serviceWorker?.controller?.postMessage({ type: 'call-handled', callId })
+  if (!isNative()) navigator.serviceWorker?.controller?.postMessage({ type: 'call-handled', callId })
   clearNotifications(`call-${callId}`)
 }
 
-/** toque numa notificação com o app já aberto em segundo plano */
-export function onNotificationOpen(cb: (d: { conversationId?: string; callId?: string }) => void) {
+type OpenData = { conversationId?: string; callId?: string; action?: string; mesh?: boolean }
+
+/** toque numa notificação (app aberto em segundo plano, ou recém-aberto por ela) */
+export function onNotificationOpen(cb: (d: OpenData) => void) {
+  if (isNative()) {
+    const h = Zap.addListener('notificationOpen', cb)
+    return () => void h.then((x) => x.remove())
+  }
   if (!('serviceWorker' in navigator)) return () => {}
   const handler = (e: MessageEvent) => {
     if (e.data?.type === 'open-chat') cb(e.data)
   }
   navigator.serviceWorker.addEventListener('message', handler)
   return () => navigator.serviceWorker.removeEventListener('message', handler)
+}
+
+/** token do Firebase trocado pelo sistema: registra o novo */
+export function onPushTokenChange(cb: () => void) {
+  if (!isNative()) return () => {}
+  const h = Zap.addListener('pushToken', cb)
+  return () => void h.then((x) => x.remove())
 }
 
 function base64UrlToBytes(b64: string) {

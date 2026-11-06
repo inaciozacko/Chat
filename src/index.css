@@ -4661,3 +4661,248 @@ canvas.sticker-img {
   font-size: 13px;
   color: var(--text-2);
 }
+
+/* ------------------------------------------------------------ modo emergência */
+.sos-icon {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.emg-app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  background: var(--bg-panel);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.emg-app > .panel {
+  flex: 1;
+  min-width: 0;
+}
+.emg .scroll {
+  padding-bottom: 16px;
+}
+.emg-offline {
+  margin: 10px 12px 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(214, 69, 69, 0.1);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.emg-card {
+  margin: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--bg-search);
+  border: 1px solid var(--border);
+}
+.emg-card p {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.emg-card.on {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.3);
+}
+.emg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.emg-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-3);
+  flex-shrink: 0;
+}
+.emg-card.on .emg-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.5);
+  animation: emg-pulse 1.6s infinite;
+}
+@keyframes emg-pulse {
+  70% {
+    box-shadow: 0 0 0 10px rgba(var(--accent-rgb), 0);
+  }
+}
+.emg-net {
+  margin-top: 8px;
+  padding-left: 24px;
+}
+.emg-error {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(214, 69, 69, 0.12);
+  color: var(--danger);
+  font-size: 13px;
+}
+.emg-quick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 0 12px;
+}
+.emg-quick button {
+  padding: 12px 6px;
+  border-radius: 14px;
+  background: var(--bg-search);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.emg-quick button:nth-child(2) {
+  background: rgba(214, 69, 69, 0.1);
+  border-color: rgba(214, 69, 69, 0.3);
+}
+.emg-hint {
+  padding: 6px 14px 4px;
+}
+.emg-empty {
+  padding: 18px 20px;
+  text-align: center;
+}
+.emg-contact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: left;
+}
+.emg-contact:hover {
+  background: var(--bg-hover);
+}
+.emg-contact .grow {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.emg-contact-top,
+.emg-contact-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.emg-contact-bottom .ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.emg-name {
+  font-size: 15.5px;
+  color: var(--text);
+}
+.emg-contact .unread-badge {
+  background: var(--danger);
+  color: #fff;
+  border-radius: 10px;
+  min-width: 20px;
+  padding: 1px 6px;
+  font-size: 12px;
+  text-align: center;
+}
+.emg-about {
+  margin: 16px 14px 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bg-search);
+  line-height: 1.5;
+}
+.emg-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--bg-chat);
+}
+.emg-banner {
+  align-self: center;
+  max-width: 90%;
+  margin-bottom: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgba(214, 69, 69, 0.1);
+  color: var(--text-2);
+  font-size: 12.5px;
+  text-align: center;
+}
+.emg-msg {
+  max-width: 82%;
+  padding: 7px 10px 5px;
+  border-radius: 12px;
+  background: var(--bubble-in);
+  box-shadow: var(--bubble-shadow);
+  align-self: flex-start;
+}
+.emg-msg.out {
+  background: var(--bubble-out);
+  align-self: flex-end;
+}
+.emg-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.emg-loc {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+}
+.emg-meta {
+  margin-top: 2px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.emg-tick.delivered {
+  color: var(--blue-tick);
+}
+.emg-thread-error {
+  margin: 0 12px 6px;
+}
+.emg-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  background: var(--bg-header);
+  border-top: 1px solid var(--border);
+}
+.emg-composer textarea {
+  flex: 1;
+  min-height: 42px;
+  max-height: 120px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 21px;
+  background: var(--input-bg);
+  resize: none;
+  outline: none;
+}
+.emg-send {
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 21px;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+.emg-composer .icon-btn {
+  font-size: 20px;
+  height: 42px;
+}

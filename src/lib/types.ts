@@ -121,5 +121,6 @@ export type LeftPanel =
   | 'status'
   | 'announcements'
   | 'calls'
+  | 'emergency'
 
 export type RightPanel = null | 'info' | 'search' | 'starred'

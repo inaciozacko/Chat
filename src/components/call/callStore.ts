@@ -4,6 +4,7 @@ import { useChat } from '../../store/chat'
 import { supabase } from '../../lib/supabase'
 import { countCameras, deviceIdOf, isMirrored, openCamera, type Facing } from '../../lib/camera'
 import { markCallHandled, sendPush } from '../../lib/push'
+import { useCallLog } from '../calls/callLog'
 
 /**
  * Chamadas 1:1 de voz e vídeo via WebRTC.
@@ -56,6 +57,17 @@ let unsub: (() => void) | null = null
 let reofferTimer: number | undefined
 /** chamadas já tratadas neste aparelho (ignora as ofertas repetidas delas) */
 const seenCalls = new Set<string>()
+/** "Atender" tocado na notificação antes de o app abrir */
+let autoAnswer: { id: string; at: number } | null = null
+
+export function answerWhenRinging(callId: string) {
+  const st = useCall.getState()
+  if (st.callId === callId && st.phase === 'incoming') {
+    st.accept()
+    return
+  }
+  autoAnswer = { id: callId, at: Date.now() }
+}
 
 function myId() {
   return useChat.getState().session?.user.id ?? ''
@@ -190,6 +202,11 @@ export const useCall = create<CallState>((set, get) => {
       // app na tela: a tela de chamada assume, então a notificação que estava tocando some
       if (document.visibilityState === 'visible') markCallHandled(sig.callId)
       timeout = window.setTimeout(() => get().phase === 'incoming' && cleanup('Chamada perdida'), 45000)
+      // tocou em "Atender" na notificação: atende sozinho assim que a chamada chega
+      if (autoAnswer && autoAnswer.id === sig.callId && Date.now() - autoAnswer.at < 60_000) {
+        autoAnswer = null
+        window.setTimeout(() => get().accept(), 300)
+      }
       return
     }
     if (sig.callId !== st.callId) return
@@ -280,6 +297,9 @@ export const useCall = create<CallState>((set, get) => {
         window.clearInterval(reofferTimer)
         reofferTimer = window.setInterval(() => {
           if (get().phase !== 'outgoing' || !pc?.localDescription) return window.clearInterval(reofferTimer)
+          // recusada pelo botão "Recusar" da notificação (o outro lado nem abriu o app)
+          const row = useCallLog.getState().list?.find((c) => c.id === get().callId)
+          if (row?.status === 'rejected') return cleanup('Chamada recusada')
           signal('offer', { sdp: pc.localDescription.toJSON() })
         }, 3000)
         timeout = window.setTimeout(() => {

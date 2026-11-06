@@ -18,7 +18,11 @@ import { selectMissedCalls, useCallLog } from './components/calls/callLog'
 import { AppLogo, IconChat, IconGear, IconMegaphone, IconPhoneOutline, IconStarOutline, IconStatus } from './lib/icons'
 import { isAdminEmail } from './lib/admin'
 import { setFaviconCount } from './lib/favicon'
-import { onNotificationOpen, registerServiceWorker, syncPush } from './lib/push'
+import { onNotificationOpen, onPushTokenChange, registerServiceWorker, syncPush } from './lib/push'
+import { isNative } from './lib/native'
+import { emergencyAccount, useMesh, type MeshContact } from './lib/mesh/mesh'
+import { EmergencyPanel } from './components/emergency/Emergency'
+import { answerWhenRinging } from './components/call/callStore'
 import { cx, ts } from './lib/utils'
 
 /** cor da barra de status do celular / barra do navegador, igual ao topo do app em cada tema */
@@ -44,10 +48,25 @@ export default function App() {
     return () => data.subscription.unsubscribe()
   }, [])
 
+  // app Android aberto SEM internet: vai direto para o modo emergência (se já foi preparado com internet antes)
+  const [offlineStart] = useState(() => isNative() && !navigator.onLine && emergencyAccount())
+  if (offlineStart) return <EmergencyStandalone uid={offlineStart} />
+
   if (!isConfigured) return <SetupScreen />
   if (session === undefined) return <Splash />
   if (!session) return <Auth />
   return <Main session={session} />
+}
+
+function EmergencyStandalone({ uid }: { uid: string }) {
+  useEffect(() => {
+    useMesh.getState().init(uid)
+  }, [uid])
+  return (
+    <div className="emg-app">
+      <EmergencyPanel standalone />
+    </div>
+  )
 }
 
 function Splash() {
@@ -119,8 +138,31 @@ function Main({ session }: { session: Session }) {
       open(params.get('c'))
       history.replaceState(null, '', location.pathname)
     }
-    return onNotificationOpen((d) => open(d.conversationId))
+    return onNotificationOpen((d) => {
+      if (d.mesh) {
+        useChat.getState().set({ leftPanel: 'emergency' })
+        return
+      }
+      open(d.conversationId)
+      if (d.callId && d.action === 'answer') answerWhenRinging(d.callId)
+    })
   }, [loaded])
+
+  // o Android trocou o token do Firebase: registra o novo
+  useEffect(() => onPushTokenChange(() => syncPush(useChat.getState().settings.notifications)), [])
+
+  // modo emergência (app Android): prepara chaves e guarda os contatos para funcionar sem internet
+  useEffect(() => {
+    if (!loaded || !isNative()) return
+    const st = useChat.getState()
+    const contacts = new Map<string, MeshContact>()
+    for (const list of Object.values(st.members))
+      for (const m of list) {
+        const p = st.profiles[m.user_id]
+        if (p && p.id !== uid) contacts.set(p.id, { id: p.id, name: p.full_name || 'Contato', avatar: p.avatar_url })
+      }
+    useMesh.getState().init(uid, { name: st.me?.full_name, contacts: [...contacts.values()] })
+  }, [loaded, uid, convIds])
 
   if (!s.loaded || !s.me) return <Splash />
 
@@ -144,6 +186,8 @@ function Main({ session }: { session: Session }) {
         return isAdminEmail(session.user.email) ? <AnnouncementsPanel /> : <ChatList />
       case 'calls':
         return <CallsPanel />
+      case 'emergency':
+        return <EmergencyPanel onBack={() => s.set({ leftPanel: 'chats' })} />
       default:
         return <ChatList />
     }
@@ -190,8 +234,9 @@ function MobileTabs() {
   const s = useChat()
   const { unreadChats, missedCalls, hasNewStatus } = useTabBadges()
   const admin = isAdminEmail(s.session?.user.email)
+  const meshUnread = useMesh((m) => Object.values(m.unread).reduce((a, b) => a + b, 0))
   // só aparece nas telas principais (some em "nova conversa", perfil, etc., como no original)
-  if (!['chats', 'status', 'calls', 'announcements'].includes(s.leftPanel)) return null
+  if (!['chats', 'status', 'calls', 'announcements', 'emergency'].includes(s.leftPanel)) return null
   const tab = (key: typeof s.leftPanel, label: string, icon: React.ReactNode, badge?: React.ReactNode) => (
     <button
       className={cx('bottom-tab', s.leftPanel === key && 'active')}
@@ -211,6 +256,8 @@ function MobileTabs() {
       {tab('status', 'Atualizações', <IconStatus />, hasNewStatus && <span className="rail-dot" />)}
       {tab('calls', 'Ligações', <IconPhoneOutline />, missedCalls > 0 && <span className="rail-badge red">{missedCalls}</span>)}
       {admin && tab('announcements', 'Anúncios', <IconMegaphone />)}
+      {isNative() &&
+        tab('emergency', 'Emergência', <span className="sos-icon">SOS</span>, meshUnread > 0 && <span className="rail-badge red">{meshUnread}</span>)}
     </nav>
   )
 }
@@ -256,6 +303,15 @@ function NavRail() {
           onClick={() => s.set({ leftPanel: 'announcements' })}
         >
           <IconMegaphone />
+        </button>
+      )}
+      {isNative() && (
+        <button
+          className={cx('rail-btn', s.leftPanel === 'emergency' && 'active')}
+          title="Modo emergência (sem internet)"
+          onClick={() => s.set({ leftPanel: 'emergency' })}
+        >
+          <span className="sos-icon">SOS</span>
         </button>
       )}
       <div className="grow" />

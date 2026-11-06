@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "20644424555",
+    "project_id": "zapchat-89c93",
+    "storage_bucket": "zapchat-89c93.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:20644424555:android:e8d517916dc0eb36c2fa2e",
+        "android_client_info": {
+          "package_name": "app.zap.chat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4f8kW-4uoA0xL6QckSuEuB0O82VfU1Cg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

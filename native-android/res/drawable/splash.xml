@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- tela de abertura: fundo do tema + logo do Zap no centro -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/zap_splash_bg" />
+    <item>
+        <bitmap android:gravity="center" android:src="@drawable/zap_splash_logo" />
+    </item>
+</layer-list>

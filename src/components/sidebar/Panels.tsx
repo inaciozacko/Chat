@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '../../store/chat'
 import { supabase } from '../../lib/supabase'
-import { enablePush, pushSupported, removePush, syncPush, type PushState } from '../../lib/push'
+import {
+  enablePush,
+  notificationPermission,
+  pushSupported,
+  removePush,
+  syncPush,
+  type PermissionValue,
+  type PushState,
+} from '../../lib/push'
 import type { Message, Profile } from '../../lib/types'
 import {
   IconArrowRight,
@@ -286,9 +294,10 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
 export function SettingsPanel() {
   const s = useChat()
   const me = s.me!
-  const [perm, setPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+  const [perm, setPerm] = useState<PermissionValue>('default')
   const [push, setPush] = useState<PushState | null>(null)
   useEffect(() => {
+    notificationPermission().then(setPerm)
     if (s.settings.notifications) syncPush(true).then(setPush)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -334,7 +343,7 @@ export function SettingsPanel() {
             onChange={async (v) => {
               if (v) {
                 setPush(await enablePush())
-                setPerm(Notification.permission)
+                setPerm(await notificationPermission())
               } else {
                 setPush(await syncPush(false))
               }
