@@ -1,7 +1,7 @@
 /**
  * Ícone da aba do navegador.
- *  - sem mensagens: logo normal (balão verde com raio) — /favicon.svg
- *  - com mensagens: o mesmo balão verde com o número de CONVERSAS não lidas dentro ("9+" acima de 9)
+ *  - sem mensagens: logo normal (balão índigo com raio) — /favicon.svg
+ *  - com mensagens: o mesmo balão com o número de CONVERSAS não lidas dentro ("9+" acima de 9)
  * Gerado em canvas (PNG) para funcionar em todos os navegadores.
  */
 const BUBBLE =
@@ -40,7 +40,10 @@ export function setFaviconCount(count: number) {
   const ctx = c.getContext('2d')
   if (!ctx) return
   ctx.scale(scale, scale)
-  ctx.fillStyle = '#00a884'
+  const grad = ctx.createLinearGradient(4, 4, 60, 60) // mesmo degradê índigo do /favicon.svg
+  grad.addColorStop(0, '#6f7cd2')
+  grad.addColorStop(1, '#4f5cae')
+  ctx.fillStyle = grad
   ctx.fill(new Path2D(BUBBLE))
   ctx.fillStyle = '#ffffff'
   ctx.textAlign = 'center'

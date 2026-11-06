@@ -13,6 +13,7 @@ import type {
   Sticker,
 } from '../lib/types'
 import { conversationTitle, messagePreview, ts } from '../lib/utils'
+import { clearNotifications, isPushActive, sendPush, showLocalNotification } from '../lib/push'
 
 const PAGE = 50
 
@@ -354,6 +355,7 @@ export const useChat = create<State & Actions>((set, get) => ({
   markRead: async (convId) => {
     const uid = get().session?.user.id
     if (!uid) return
+    clearNotifications(convId) // leu no app: some a notificação da barra do celular
     set((s) => ({
       unread: { ...s.unread, [convId]: 0 },
       members: {
@@ -401,6 +403,7 @@ export const useChat = create<State & Actions>((set, get) => ({
       return null
     }
     get().onMessage(data as Message, 'INSERT')
+    if (data.type !== 'system') sendPush({ type: 'message', message_id: data.id })
     return data as Message
   },
 
@@ -898,17 +901,20 @@ function notifyIncoming(m: Message, isActive: boolean) {
   const uid = s.session?.user.id
   const member = s.members[m.conversation_id]?.find((x) => x.user_id === uid)
   if (member?.muted) return
-  if (s.settings.sounds && !isActive) beep()
-  if (!s.settings.notifications || document.visibilityState === 'visible') return
-  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  const visible = document.visibilityState === 'visible'
+  // com push ativo, o aviso fora do app vem do sistema (com o som da notificação): não toca o bip junto
+  if (s.settings.sounds && !isActive && (visible || !isPushActive())) beep()
+  if (!s.settings.notifications || visible || isPushActive()) return
+  // sem push (ex.: servidor ainda não configurado): o próprio app avisa enquanto estiver aberto
   const conv = s.conversations[m.conversation_id]
   const title = conv ? conversationTitle(conv, s.members[conv.id], s.profiles, uid!) : 'Nova mensagem'
   const sender = m.sender_id ? s.profiles[m.sender_id]?.full_name : ''
   const body = (conv?.is_group && sender ? `${sender}: ` : '') + messagePreview(m)
-  const n = new Notification(title, { body, icon: '/favicon.svg', tag: m.conversation_id })
-  n.onclick = () => {
-    window.focus()
-    useChat.getState().openChat(m.conversation_id)
-    n.close()
-  }
+  const icon = (conv?.is_group ? conv.avatar_url : m.sender_id && s.profiles[m.sender_id]?.avatar_url) || undefined
+  showLocalNotification(title, {
+    body,
+    icon,
+    tag: m.conversation_id,
+    data: { kind: 'message', conversationId: m.conversation_id, url: `/?c=${m.conversation_id}` },
+  })
 }

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { useChat } from '../../store/chat'
+import { enablePush, pushSupported } from '../../lib/push'
 import {
   IconArchive,
+  IconBell,
   IconChatPlus,
   IconChevronDown,
   IconDots,
@@ -25,6 +27,34 @@ import type { Conversation } from '../../lib/types'
 import { PanelHeader } from '../common'
 
 type Filter = 'all' | 'unread' | 'groups' | 'pinned'
+
+/** "Ative as notificações" no topo da lista, enquanto o aparelho ainda não deu (nem negou) a permissão */
+function NotifyBanner() {
+  const s = useChat()
+  const [perm, setPerm] = useState(pushSupported() ? Notification.permission : 'denied')
+  const [busy, setBusy] = useState(false)
+  if (perm !== 'default' || !s.settings.notifications) return null
+  return (
+    <button
+      className="notify-banner"
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true)
+        await enablePush()
+        setPerm(Notification.permission)
+        setBusy(false)
+      }}
+    >
+      <span className="notify-banner-icon">
+        <IconBell />
+      </span>
+      <span className="notify-banner-text">
+        <strong>Ative as notificações</strong>
+        <span>Receba mensagens e ligações mesmo com o app fechado</span>
+      </span>
+    </button>
+  )
+}
 
 export function ChatList({ archived = false }: { archived?: boolean }) {
   const s = useChat()
@@ -197,6 +227,7 @@ export function ChatList({ archived = false }: { archived?: boolean }) {
       )}
 
       <div className="chat-list scroll">
+        {!archived && <NotifyBanner />}
         {!archived && archivedCount > 0 && (
           <button className="archived-row" onClick={() => s.set({ leftPanel: 'archived' })}>
             <span className="archived-icon">

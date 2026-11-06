@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useChat } from '../../store/chat'
 import { supabase } from '../../lib/supabase'
+import { enablePush, pushSupported, removePush, syncPush, type PushState } from '../../lib/push'
 import type { Message, Profile } from '../../lib/types'
 import {
   IconArrowRight,
@@ -286,6 +287,23 @@ export function SettingsPanel() {
   const s = useChat()
   const me = s.me!
   const [perm, setPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+  const [push, setPush] = useState<PushState | null>(null)
+  useEffect(() => {
+    if (s.settings.notifications) syncPush(true).then(setPush)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const notifOn = s.settings.notifications && perm === 'granted'
+  const notifText = !pushSupported()
+    ? 'Este navegador não mostra notificações'
+    : perm === 'denied'
+      ? 'Bloqueadas — libere nas configurações do celular/navegador'
+      : !notifOn
+        ? 'Toque para ativar'
+        : push === 'on'
+          ? 'Chegam mesmo com o app fechado'
+          : push === 'error'
+            ? 'Só com o app aberto (servidor de push indisponível)'
+            : 'Ativadas'
   return (
     <div className="panel">
       <PanelHeader title="Configurações" onBack={() => s.set({ leftPanel: 'chats' })} />
@@ -308,17 +326,17 @@ export function SettingsPanel() {
         <div className="settings-row">
           <IconBell />
           <div className="settings-text">
-            <div>Notificações na área de trabalho</div>
-            <div className="muted small">
-              {perm === 'granted' ? 'Ativadas no navegador' : perm === 'denied' ? 'Bloqueadas no navegador' : 'Clique para permitir'}
-            </div>
+            <div>Notificações</div>
+            <div className="muted small">{notifText}</div>
           </div>
           <Toggle
-            on={s.settings.notifications && perm === 'granted'}
+            on={notifOn}
             onChange={async (v) => {
-              if (v && perm !== 'granted' && 'Notification' in window) {
-                const p = await Notification.requestPermission()
-                setPerm(p)
+              if (v) {
+                setPush(await enablePush())
+                setPerm(Notification.permission)
+              } else {
+                setPush(await syncPush(false))
               }
               s.updateSettings({ notifications: v })
             }}
@@ -353,7 +371,7 @@ export function SettingsPanel() {
             <div>Papel de parede</div>
           </div>
           <div className="wallpapers">
-            {['default', '#d1e4d0', '#cfe0ec', '#f3dcd4', '#e6dcf3', '#ece5dd', '#1f2c33', '#0b141a'].map((w) => (
+            {['default', '#dde2f2', '#d8e5ec', '#ece0db', '#e4def0', '#e8e6e1', '#1f232c', '#101216'].map((w) => (
               <button
                 key={w}
                 className={cx('wallpaper-swatch', s.settings.wallpaper === w && 'active')}
@@ -378,7 +396,13 @@ export function SettingsPanel() {
             <div className="muted small">Nome, foto, recado</div>
           </div>
         </div>
-        <div className="settings-row danger" onClick={() => supabase.auth.signOut()}>
+        <div
+          className="settings-row danger"
+          onClick={async () => {
+            await removePush() // este aparelho para de receber as notificações desta conta
+            supabase.auth.signOut()
+          }}
+        >
           <IconLogout />
           <div className="settings-text">
             <div>Desconectar</div>

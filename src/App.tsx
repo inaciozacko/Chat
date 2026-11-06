@@ -18,7 +18,11 @@ import { selectMissedCalls, useCallLog } from './components/calls/callLog'
 import { AppLogo, IconChat, IconGear, IconMegaphone, IconPhoneOutline, IconStarOutline, IconStatus } from './lib/icons'
 import { isAdminEmail } from './lib/admin'
 import { setFaviconCount } from './lib/favicon'
+import { onNotificationOpen, registerServiceWorker, syncPush } from './lib/push'
 import { cx, ts } from './lib/utils'
+
+/** cor da barra de status do celular / barra do navegador, igual ao topo do app em cada tema */
+const THEME_COLOR = { light: '#f7f8fa', dark: '#171a20' }
 
 export default function App() {
   const [session, setSession] = useState<Session | null | undefined>(undefined)
@@ -26,7 +30,12 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme])
   }, [theme])
+
+  useEffect(() => {
+    registerServiceWorker()
+  }, [])
 
   useEffect(() => {
     if (!isConfigured) return
@@ -88,6 +97,30 @@ function Main({ session }: { session: Session }) {
     setFaviconCount(unreadChats)
   }, [unreadChats])
   useEffect(() => () => setFaviconCount(0), []) // ao sair da conta, volta o ícone normal
+
+  // notificações push deste aparelho (inscreve/atualiza ao entrar; respeita a configuração)
+  const notificationsOn = s.settings.notifications
+  useEffect(() => {
+    syncPush(notificationsOn)
+  }, [uid, notificationsOn])
+
+  // tocou numa notificação: abre a conversa (app fechado → vem na URL ?c=; app em segundo plano → mensagem do SW)
+  const loaded = s.loaded
+  useEffect(() => {
+    if (!loaded) return
+    const open = (convId?: string | null) => {
+      if (convId && useChat.getState().conversations[convId]) {
+        useChat.getState().set({ leftPanel: 'chats' })
+        useChat.getState().openChat(convId)
+      }
+    }
+    const params = new URLSearchParams(location.search)
+    if (params.has('c')) {
+      open(params.get('c'))
+      history.replaceState(null, '', location.pathname)
+    }
+    return onNotificationOpen((d) => open(d.conversationId))
+  }, [loaded])
 
   if (!s.loaded || !s.me) return <Splash />
 

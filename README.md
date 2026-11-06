@@ -28,8 +28,11 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
 - **Pesquisa de mensagens** na conversa, com salto até a mensagem
 - **Status** (24h): texto com fundo colorido ou foto, visualizações, responder status
 - **Chamadas de voz e vídeo** 1:1 (WebRTC, sinalização pelo Supabase Realtime)
-- **Notificações** do navegador + som, contador no título da aba
-- **Tema claro/escuro**, papel de parede, "Enter para enviar", layout responsivo (celular)
+- **Notificações push** (como no WhatsApp): chegam com o app fechado e a tela desligada, agrupadas por conversa
+  ("Fulano (3 mensagens)"), ligações "tocam" até atender e viram "Chamada perdida"; tocar abre a conversa.
+  Conversas silenciadas não notificam. Som no app + contador no título da aba
+- **App Android / PWA**: instalável pelo Chrome e empacotável como APK (TWA) — veja "App Android" abaixo
+- **Tema claro/escuro** (paleta ardósia + índigo suave), papel de parede, "Enter para enviar", layout responsivo (celular)
 
 ## Configuração
 
@@ -51,6 +54,29 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
    ```
    Abra em duas abas/navegadores com contas diferentes para conversar.
 
+## Notificações push
+
+1. No **SQL Editor** do Supabase, rode [`supabase/push.sql`](supabase/push.sql) (tabela dos aparelhos inscritos).
+2. Na **Vercel** (Settings → Environment Variables), crie:
+   - `VAPID_PRIVATE_KEY` — chave privada do par VAPID (a pública está em `src/lib/push.ts` e `api/push.js`)
+   - `SUPABASE_SECRET_KEY` — Supabase → Project Settings → API Keys → *Secret key* (`sb_secret_...`)
+3. Faça o deploy de novo. A função `api/push.js` vira `https://SEU-APP.vercel.app/api/push`.
+
+Como funciona: depois de enviar uma mensagem ou ligar, o app chama `/api/push`; a função confere no banco
+(só o autor da mensagem / quem ligou pode disparar) e envia o push aos outros participantes.
+`public/sw.js` (service worker) mostra a notificação. Em `npm run dev` não há `/api` — o push só funciona na Vercel.
+
+## App Android
+
+O app é um **PWA** (`public/manifest.webmanifest` + `public/sw.js` + ícones em `public/icons/`), então:
+- **Instalar direto**: abra o site no Chrome do Android → menu ⋮ → *Instalar app*.
+- **APK / Play Store (TWA)**: em [pwabuilder.com](https://www.pwabuilder.com), cole a URL da Vercel →
+  *Package for stores* → *Android*. Guarde o arquivo `signing.keystore` e as senhas (necessários para atualizar o app).
+  Copie o `assetlinks.json` gerado para `public/assetlinks.json` e faça o deploy (o `vercel.json` o publica em
+  `/.well-known/assetlinks.json`) — é isso que tira a barra de endereço do app.
+
+O APK abre o site da Vercel: cada deploy novo já chega ao app, sem gerar outro APK.
+
 ## Observações
 
 - **Remoção de fundo**: roda 100% no navegador. A IA principal é o **BiRefNet** (`onnx-community/BiRefNet_lite-ONNX`,
@@ -66,7 +92,7 @@ Clone funcional no estilo do WhatsApp Web, feito com React + TypeScript + Vite e
 - **Chamadas**: usam apenas servidores STUN públicos. Em redes muito restritivas pode ser necessário um servidor TURN
   (configure em `src/components/call/callStore.ts`).
 - Qualquer usuário cadastrado pode encontrar os outros por nome, usuário ou telefone (não há agenda de contatos).
-- Nome, logo e textos são próprios ("Zap"); o visual segue o layout do WhatsApp Web.
+- Nome, logo e textos são próprios ("Zap"); o layout é inspirado no WhatsApp Web, com paleta própria.
 
 ## Estrutura
 
@@ -82,4 +108,9 @@ src/components/stickers/       painel e criador de figurinhas
 src/components/status/         status (stories)
 src/components/info/           dados do contato/grupo, pesquisa, encaminhar, visualizador
 src/components/call/           chamadas WebRTC
+src/lib/push.ts                inscrição no push, envio para /api/push
+api/push.js                    função da Vercel que envia as notificações push
+public/sw.js                   service worker: mostra/agrupa notificações, cache offline
+public/manifest.webmanifest    PWA (app instalável / APK Android)
+supabase/push.sql              tabela dos aparelhos inscritos no push
 ```

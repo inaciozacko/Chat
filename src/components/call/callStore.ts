@@ -3,6 +3,7 @@ import { onCallSignal, sendCallSignal, type CallSignal } from '../../lib/realtim
 import { useChat } from '../../store/chat'
 import { supabase } from '../../lib/supabase'
 import { countCameras, deviceIdOf, isMirrored, openCamera, type Facing } from '../../lib/camera'
+import { markCallHandled, sendPush } from '../../lib/push'
 
 /**
  * Chamadas 1:1 de voz e vídeo via WebRTC.
@@ -48,6 +49,13 @@ let pendingOffer: RTCSessionDescriptionInit | null = null
 let pendingIce: RTCIceCandidateInit[] = []
 let timeout: number | undefined
 let unsub: (() => void) | null = null
+/**
+ * Enquanto chama, reenvia a oferta a cada 3 s: quem estava com o app fechado recebe o push,
+ * toca na notificação, o app abre e pega a próxima oferta (com todos os candidatos ICE no SDP).
+ */
+let reofferTimer: number | undefined
+/** chamadas já tratadas neste aparelho (ignora as ofertas repetidas delas) */
+const seenCalls = new Set<string>()
 
 function myId() {
   return useChat.getState().session?.user.id ?? ''
@@ -74,9 +82,15 @@ export const useCall = create<CallState>((set, get) => {
               ? 'failed'
               : 'missed'
       const patch = phase === 'connected' ? { ended_at: now } : { ended_at: now, status }
-      supabase.from('calls').update(patch).eq('id', callId).is('ended_at', null).then()
+      const update = supabase.from('calls').update(patch).eq('id', callId).is('ended_at', null)
+      // quem ligou desistiu / ninguém atendeu: a notificação do outro lado vira "Chamada perdida"
+      if (phase === 'outgoing' && (reason === 'Sem resposta' || reason === 'Chamada encerrada')) {
+        update.then(() => sendPush({ type: 'call_end', call_id: callId }))
+      } else update.then()
     }
+    if (callId) markCallHandled(callId)
     window.clearTimeout(timeout)
+    window.clearInterval(reofferTimer)
     pc?.close()
     pc = null
     pendingOffer = null
@@ -149,6 +163,13 @@ export const useCall = create<CallState>((set, get) => {
   const onSignal = async (sig: CallSignal) => {
     const st = get()
     if (sig.kind === 'offer') {
+      if (seenCalls.has(sig.callId)) {
+        // oferta repetida da mesma chamada: só confirma que está tocando aqui
+        if (st.callId === sig.callId && st.phase === 'incoming')
+          sendCallSignal({ ...sig, kind: 'ringing', from: myId(), to: sig.from, sdp: undefined })
+        return
+      }
+      seenCalls.add(sig.callId)
       if (st.phase !== 'idle' && st.phase !== 'ended') {
         sendCallSignal({ ...sig, kind: 'busy', from: myId(), to: sig.from, sdp: undefined })
         return
@@ -166,6 +187,8 @@ export const useCall = create<CallState>((set, get) => {
         endReason: null,
       })
       sendCallSignal({ ...sig, kind: 'ringing', from: myId(), to: sig.from, sdp: undefined })
+      // app na tela: a tela de chamada assume, então a notificação que estava tocando some
+      if (document.visibilityState === 'visible') markCallHandled(sig.callId)
       timeout = window.setTimeout(() => get().phase === 'incoming' && cleanup('Chamada perdida'), 45000)
       return
     }
@@ -252,6 +275,13 @@ export const useCall = create<CallState>((set, get) => {
         if (error) console.warn('Histórico de ligações indisponível:', error.message)
         if (get().phase !== 'outgoing') return
         signal('offer', { sdp: offer })
+        // app do outro lado fechado: o push faz o celular tocar
+        sendPush({ type: 'call', call_id: get().callId! })
+        window.clearInterval(reofferTimer)
+        reofferTimer = window.setInterval(() => {
+          if (get().phase !== 'outgoing' || !pc?.localDescription) return window.clearInterval(reofferTimer)
+          signal('offer', { sdp: pc.localDescription.toJSON() })
+        }, 3000)
         timeout = window.setTimeout(() => {
           if (get().phase === 'outgoing') {
             signal('end')
