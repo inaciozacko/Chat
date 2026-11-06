@@ -22,7 +22,13 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'use POST' })
 
   const miss = missingConfig()
-  if (miss.length) return res.status(500).json({ error: `Faltam ${miss.join(' e ')} nas variáveis da Vercel` })
+  if (miss.length) {
+    // diagnóstico: só os NOMES das variáveis parecidas que esta função enxerga (nunca os valores)
+    const seen = Object.keys(process.env)
+      .filter((k) => /VAPID|SUPABASE|FIREBASE/i.test(k))
+      .map((k) => (process.env[k]?.trim() ? k : `${k} (vazia)`))
+    return res.status(500).json({ error: `Faltam ${miss.join(' e ')} nas variáveis da Vercel`, variaveis_encontradas: seen })
+  }
 
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '')
   if (!token) return res.status(401).json({ error: 'sem login' })
