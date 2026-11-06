@@ -35,6 +35,14 @@ for (const d of fs.readdirSync(resDest)) {
 fs.cpSync(path.join(nat, 'res'), resDest, { recursive: true })
 log('res: ícones e splash aplicados')
 
+// ------------------------------------------------------------------ arquivos extras dentro do APK
+// ex.: o trecho de verificação que o Android Developer Console pede para provar que o app é seu
+const assetsSrc = path.join(nat, 'assets')
+if (fs.existsSync(assetsSrc)) {
+  fs.cpSync(assetsSrc, path.join(main, 'assets'), { recursive: true })
+  log('assets:', fs.readdirSync(assetsSrc).join(', '))
+}
+
 // ------------------------------------------------------------------ Firebase
 const gsDest = path.join(app, 'google-services.json')
 if (process.env.GOOGLE_SERVICES_JSON?.trim()) {
