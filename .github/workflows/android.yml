@@ -12,6 +12,10 @@ name: App Android
 on:
   push:
     branches: [main, master]
+    # documentação não muda o app: não gera APK novo
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
