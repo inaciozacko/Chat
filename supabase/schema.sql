@@ -496,7 +496,7 @@ returns boolean language sql stable security definer set search_path = public, a
   select exists (
     select 1 from auth.users u
     where u.id = auth.uid()
-      and lower(u.email) in ('inacio.vitkoski@gmail.com')
+      and lower(u.email) in ('inacio@gmail.com')
   );
 $$;
 

@@ -5,16 +5,18 @@ import {
   IconBack,
   IconChevronDown,
   IconClose,
+  IconCopy,
   IconDots,
   IconForward,
+  IconReply,
   IconPhone,
   IconSearch,
   IconStar,
   IconTrash,
   IconVideo,
 } from '../../lib/icons'
-import { Avatar, Confirm, Menu, Spinner } from '../common'
-import { MessageBubble, DeleteDialog } from './MessageBubble'
+import { Avatar, Confirm, Menu, Spinner, useIsMobile, type MenuItem } from '../common'
+import { MessageBubble, DeleteDialog, createStickerFrom, download } from './MessageBubble'
 import { Composer, MediaPreview } from './Composer'
 import {
   conversationTitle,
@@ -23,6 +25,7 @@ import {
   formatLastSeen,
   otherMemberId,
   sameDay,
+  cx,
   systemText,
   ts,
 } from '../../lib/utils'
@@ -35,6 +38,7 @@ export function ChatWindow() {
   const conv = s.conversations[convId]
   const members = s.members[convId]
   const [files, setFiles] = useState<File[] | null>(null)
+  const mobile = useIsMobile()
   const [dragging, setDragging] = useState(false)
 
   const onSendFiles = async (items: { file: File; caption: string }[]) => {
@@ -90,7 +94,7 @@ export function ChatWindow() {
         if (dropped.length) setFiles((f) => [...(f ?? []), ...dropped])
       }}
     >
-      <ChatHeader />
+      {s.selecting && mobile ? <SelectionHeader /> : <ChatHeader />}
       {files ? (
         <MediaPreview
           files={files}
@@ -101,7 +105,7 @@ export function ChatWindow() {
       ) : (
         <>
           <MessageList key={convId} />
-          {s.selecting ? (
+          {s.selecting && !mobile ? (
             <SelectionBar />
           ) : members?.some((m) => m.user_id === uid) ? (
             <Composer convId={convId} onFiles={(f) => setFiles(f)} />
@@ -463,6 +467,115 @@ function MessageList() {
         </button>
       )}
     </div>
+  )
+}
+
+/**
+ * Celular: mensagem(ns) selecionada(s) com toque longo → as ações ficam no topo, como no WhatsApp:
+ * ← · quantidade · Responder · Favoritar · Apagar · Copiar · Encaminhar · ⋮ (Editar, Baixar, ...)
+ */
+function SelectionHeader() {
+  const s = useChat()
+  const uid = s.session!.user.id
+  const convId = s.activeId!
+  const [confirm, setConfirm] = useState(false)
+  const [more, setMore] = useState<HTMLElement | null>(null)
+  const ids = s.selecting!
+  const msgs: Message[] = (s.messages[convId] ?? []).filter((m) => ids.has(m.id))
+  const one = msgs.length === 1 ? msgs[0] : null
+  const done = () => s.set({ selecting: null })
+  const anyDeleted = msgs.some((m) => m.deleted_for_everyone)
+  const texts = msgs.filter((m) => !m.deleted_for_everyone && m.content && ['text', 'image', 'video'].includes(m.type))
+  const canCopy = msgs.length > 0 && texts.length === msgs.length
+  const canForAll =
+    msgs.length > 0 &&
+    msgs.every((m) => m.sender_id === uid && !m.deleted_for_everyone && Date.now() - ts(m.created_at) < 48 * 3600 * 1000)
+  const allStarred = msgs.length > 0 && msgs.every((m) => s.starred.has(m.id))
+
+  const moreItems = (): MenuItem[] => {
+    const items: MenuItem[] = []
+    if (one && !one.deleted_for_everyone) {
+      const canEdit =
+        one.sender_id === uid && one.type === 'text' && !one.pending && Date.now() - ts(one.created_at) < 15 * 60 * 1000
+      if (canEdit) items.push({ label: 'Editar', onClick: () => s.set({ editing: one, replyTo: null, selecting: null }) })
+      if (one.media_url && one.type !== 'sticker')
+        items.push({ label: 'Baixar', onClick: () => (download(one.media_url!, one.media_name ?? 'arquivo'), done()) })
+      if (one.type === 'image' && one.media_url)
+        items.push({ label: 'Criar figurinha', onClick: () => (createStickerFrom(one.media_url!), done()) })
+      if (one.type === 'sticker' && one.media_url && !s.stickers.some((x) => x.image_url === one.media_url))
+        items.push({ label: 'Adicionar às figurinhas', onClick: () => (s.addStickerFromUrl(one.media_url!), done()) })
+    }
+    items.push({
+      label: 'Selecionar todas',
+      onClick: () => s.set({ selecting: new Set((s.messages[convId] ?? []).filter((m) => m.type !== 'system').map((m) => m.id)) }),
+    })
+    return items
+  }
+
+  return (
+    <header className="chat-header selection-header">
+      <button className="icon-btn" onClick={done} aria-label="Cancelar seleção">
+        <IconBack />
+      </button>
+      <span className="selection-count">{ids.size}</span>
+      <div className="grow" />
+      {one && !one.deleted_for_everyone && (
+        <button className="icon-btn" title="Responder" aria-label="Responder" onClick={() => s.set({ replyTo: one, editing: null, selecting: null })}>
+          <IconReply />
+        </button>
+      )}
+      {!anyDeleted && msgs.length > 0 && (
+        <button
+          className={cx('icon-btn', allStarred && 'active')}
+          title={allStarred ? 'Desfavoritar' : 'Favoritar'}
+          aria-label="Favoritar"
+          onClick={() => s.toggleStar(msgs).then(done)}
+        >
+          <IconStar />
+        </button>
+      )}
+      <button className="icon-btn" title="Apagar" aria-label="Apagar" disabled={!msgs.length} onClick={() => setConfirm(true)}>
+        <IconTrash />
+      </button>
+      {canCopy && (
+        <button
+          className="icon-btn"
+          title="Copiar"
+          aria-label="Copiar"
+          onClick={() => {
+            navigator.clipboard.writeText(texts.map((m) => m.content).join('\n'))
+            s.showToast(msgs.length > 1 ? 'Mensagens copiadas' : 'Mensagem copiada')
+            done()
+          }}
+        >
+          <IconCopy />
+        </button>
+      )}
+      {!anyDeleted && msgs.length > 0 && (
+        <button className="icon-btn" title="Encaminhar" aria-label="Encaminhar" onClick={() => s.set({ forwarding: msgs, selecting: null })}>
+          <IconForward />
+        </button>
+      )}
+      <button className="icon-btn" title="Mais opções" aria-label="Mais opções" onClick={(e) => setMore(e.currentTarget)}>
+        <IconDots />
+      </button>
+      {more && <Menu anchor={more} items={moreItems()} onClose={() => setMore(null)} />}
+      {confirm && (
+        <DeleteDialog
+          count={msgs.length}
+          canForAll={canForAll}
+          onClose={() => setConfirm(false)}
+          onForAll={async () => {
+            for (const m of msgs) await s.deleteForEveryone(m)
+            done()
+          }}
+          onForMe={async () => {
+            await s.deleteForMe(msgs)
+            done()
+          }}
+        />
+      )}
+    </header>
   )
 }
 

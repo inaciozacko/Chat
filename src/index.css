@@ -1279,7 +1279,7 @@ code {
   border-radius: 50%;
 }
 .profile-avatar:hover .profile-avatar-overlay,
-.info-avatar.editable:hover .profile-avatar-overlay {
+.info-avatar.can-edit:hover .profile-avatar-overlay {
   opacity: 1;
 }
 .editable {
@@ -3165,7 +3165,7 @@ canvas.sticker-img {
   border-radius: 50%;
   overflow: hidden;
 }
-.info-avatar.editable {
+.info-avatar.can-edit {
   cursor: pointer;
 }
 .info-name {
@@ -3744,11 +3744,10 @@ canvas.sticker-img {
   .composer {
     padding: 5px 6px;
   }
-  .react-btn {
-    display: none;
-  }
+  /* no celular as opções aparecem segurando a mensagem (barra no topo), como no WhatsApp */
+  .react-btn,
   .msg-chevron {
-    opacity: 1;
+    display: none !important;
   }
 }
 
@@ -4938,4 +4937,88 @@ canvas.sticker-img {
 html,
 body {
   background: var(--bg-panel);
+}
+
+/* ------------------------------------------------------------ fotos de perfil sempre redondas
+   (os painéis são colunas flexíveis: sem isto, com pouca altura o círculo era achatado/cortado) */
+.avatar,
+.profile-avatar,
+.avatar-picker {
+  flex-shrink: 0;
+  aspect-ratio: 1;
+}
+.info-avatar {
+  flex-shrink: 0;
+}
+.info-avatar.can-edit {
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ divisória redimensionável (computador) */
+.sidebar-resizer {
+  display: none;
+}
+@media (min-width: 721px) {
+  .app[style*='--sidebar-w'] .sidebar {
+    flex: 0 0 clamp(260px, var(--sidebar-w), 60%);
+    width: clamp(260px, var(--sidebar-w), 60%);
+  }
+  .sidebar-resizer {
+    display: block;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -4px;
+    width: 8px;
+    cursor: col-resize;
+    z-index: 20;
+    touch-action: none;
+  }
+  .sidebar-resizer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 2px;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .sidebar-resizer:hover::after,
+  .sidebar-resizer:focus-visible::after,
+  .resizing-sidebar .sidebar-resizer::after {
+    background: var(--green);
+  }
+  .sidebar-resizer:focus-visible {
+    outline: none;
+  }
+  /* durante o arrasto: cursor fixo e sem selecionar texto */
+  .resizing-sidebar,
+  .resizing-sidebar * {
+    cursor: col-resize !important;
+    user-select: none !important;
+  }
+}
+
+/* ------------------------------------------------------------ celular: barra de ações da seleção */
+.selection-header {
+  gap: 2px;
+}
+.selection-header .selection-count {
+  font-size: 19px;
+  font-weight: 500;
+  margin-left: 6px;
+  color: var(--text);
+}
+.selection-header .icon-btn.active {
+  color: var(--green);
+}
+@media (max-width: 720px) {
+  /* celular: sem caixinhas na seleção, só o destaque da mensagem (como no WhatsApp) */
+  .msg-row.selecting .select-box {
+    display: none;
+  }
+  .msg-row.selected {
+    background: rgba(var(--accent-rgb), 0.16);
+  }
 }

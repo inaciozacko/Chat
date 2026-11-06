@@ -106,7 +106,7 @@ function ContactInfo() {
       </div>
       <div className="scroll info-scroll">
         <section className="info-hero">
-          <div className={cx('info-avatar', conv.is_group && 'editable')} onClick={conv.is_group ? pickIcon : undefined}>
+          <div className={cx('info-avatar', conv.is_group && 'can-edit')} onClick={conv.is_group ? pickIcon : undefined}>
             <Avatar
               url={conv.is_group ? conv.avatar_url : other?.avatar_url}
               group={conv.is_group}

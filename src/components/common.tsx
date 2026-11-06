@@ -271,6 +271,19 @@ export function EditableField({
  * Toque longo (celular): abre o menu de opções como no app. No iPhone não existe "clique direito",
  * então sem isso não haveria como responder, apagar, reagir etc. pelo toque.
  */
+/** tela de celular (mesmo limite do CSS: 720px) — atualiza ao girar/redimensionar */
+export function useIsMobile() {
+  const q = '(max-width: 720px)'
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.matchMedia(q).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(q)
+    const on = () => setM(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return m
+}
+
 export function useLongPress(onLong: (pos: { x: number; y: number }, el: HTMLElement) => void, ms = 450) {
   const timer = useRef<number | undefined>(undefined)
   const start = useRef<{ x: number; y: number } | null>(null)

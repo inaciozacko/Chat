@@ -1,4 +1,4 @@
-import { memo, useState, type ReactNode } from 'react'
+import { memo, useEffect, useState, type ReactNode } from 'react'
 import { useChat } from '../../store/chat'
 import { useBackHandler } from '../../lib/back'
 import { Emoji, emojify } from '../emoji/AnimatedEmoji'
@@ -15,7 +15,7 @@ import {
   IconSmile,
   IconStar,
 } from '../../lib/icons'
-import { Avatar, Menu, Modal, Ticks, useLongPress, type MenuItem } from '../common'
+import { Avatar, Menu, Modal, Ticks, useIsMobile, useLongPress, type MenuItem } from '../common'
 import { AudioPlayer } from './AudioPlayer'
 import { AnimatedSticker } from '../stickers/AnimatedSticker'
 import { isAnimatedUrl } from '../../lib/sticker'
@@ -108,11 +108,24 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
   const { msg, isMine } = p
   const s = useChat.getState()
   const [menu, setMenu] = useState<HTMLElement | { x: number; y: number } | null>(null)
-  // celular: segurar a mensagem abre o menu (responder, reagir, apagar...)
-  const longPress = useLongPress((pos) => {
-    if (!p.selecting) setMenu(pos)
-  })
   const [reactBar, setReactBar] = useState<HTMLElement | null>(null)
+  const mobile = useIsMobile()
+  // barra de reações aberta pelo toque longo: some quando a seleção muda ou termina
+  useEffect(() => {
+    if (!reactBar || !mobile) return
+    if (!p.selecting) return setReactBar(null)
+    const close = () => setReactBar(null)
+    window.addEventListener('zap-selection-changed', close)
+    return () => window.removeEventListener('zap-selection-changed', close)
+  }, [reactBar, mobile, p.selecting])
+  // celular (como no WhatsApp): segurar a mensagem a seleciona — as ações aparecem no topo da tela —
+  // e mostra a barra de reações em cima dela; no computador, abre o menu
+  const longPress = useLongPress((pos, el) => {
+    if (p.selecting) return
+    if (!mobile) return setMenu(pos)
+    useChat.getState().set({ selecting: new Set([msg.id]) })
+    if (!deleted && !msg.pending) setReactBar((el.querySelector('.bubble') as HTMLElement) ?? el)
+  })
   const [fullPicker, setFullPicker] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [reactionsInfo, setReactionsInfo] = useState(false)
@@ -132,7 +145,9 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
     const sel = new Set(useChat.getState().selecting ?? [])
     if (sel.has(msg.id)) sel.delete(msg.id)
     else sel.add(msg.id)
-    useChat.getState().set({ selecting: sel })
+    // celular: desmarcou a última = sai da seleção (como no WhatsApp)
+    useChat.getState().set({ selecting: sel.size === 0 && mobile ? null : sel })
+    window.dispatchEvent(new Event('zap-selection-changed'))
   }
 
   const menuItems = (): MenuItem[] => {
@@ -443,12 +458,14 @@ export const MessageBubble = memo(function MessageBubble(p: Props) {
           onPick={(e) => {
             s.react(msg, e)
             setReactBar(null)
+            if (mobile && useChat.getState().selecting) useChat.getState().set({ selecting: null })
           }}
           onMore={() => {
             setReactBar(null)
             setFullPicker(true)
           }}
           onClose={() => setReactBar(null)}
+          noBackdrop={mobile && p.selecting}
         />
       )}
 
@@ -560,12 +577,15 @@ function ReactionBar({
   onPick,
   onMore,
   onClose,
+  noBackdrop,
 }: {
   anchor: HTMLElement
   mine?: string
   onPick: (e: string) => void
   onMore: () => void
   onClose: () => void
+  /** celular: sem a camada que bloqueia a tela, para os botões do topo funcionarem no primeiro toque */
+  noBackdrop?: boolean
 }) {
   useBackHandler(true, onClose)
   const r = anchor.getBoundingClientRect()
@@ -573,7 +593,7 @@ function ReactionBar({
   const left = Math.max(8, Math.min(window.innerWidth - 330, r.left - 150))
   return (
     <>
-      <div className="reaction-backdrop" onMouseDown={onClose} />
+      {!noBackdrop && <div className="reaction-backdrop" onMouseDown={onClose} />}
       <div className="reaction-bar" style={{ top, left }}>
         {QUICK_REACTIONS.map((e) => (
           <button key={e} className={cx(mine === e && 'mine')} onClick={() => onPick(e)} aria-label={e}>
@@ -588,7 +608,7 @@ function ReactionBar({
   )
 }
 
-async function download(url: string, name: string) {
+export async function download(url: string, name: string) {
   try {
     const res = await fetch(url)
     const blob = await res.blob()
@@ -602,7 +622,7 @@ async function download(url: string, name: string) {
   }
 }
 
-async function createStickerFrom(url: string) {
+export async function createStickerFrom(url: string) {
   try {
     const blob = await (await fetch(url)).blob()
     useChat.getState().set({ stickerCreator: { file: blob } })

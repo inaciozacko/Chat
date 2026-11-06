@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { isConfigured, supabase } from './lib/supabase'
 import { startRealtime, stopRealtime, syncConvChannels } from './lib/realtime'
@@ -70,6 +70,50 @@ export default function App() {
   if (session === undefined) return <Splash />
   if (!session) return <Auth />
   return <Main session={session} />
+}
+
+/**
+ * Divisória entre a lista de conversas e a conversa (só no computador):
+ * arrastar muda a largura, duplo clique volta ao padrão, setas do teclado ajustam de 16 em 16 px.
+ * O CSS limita a largura a 260 px – 60% da janela, então ela se adapta quando a janela muda de tamanho.
+ */
+function SidebarResizer({ width, onChange }: { width: number | null; onChange: (w: number | null) => void }) {
+  const drag = useRef<{ left: number } | null>(null)
+  const current = (el: HTMLElement) => el.parentElement!.getBoundingClientRect().width
+  return (
+    <div
+      className="sidebar-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Redimensionar lista de conversas"
+      tabIndex={0}
+      title="Arraste para mudar a largura · duplo clique volta ao padrão"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        drag.current = { left: e.currentTarget.parentElement!.getBoundingClientRect().left }
+        e.currentTarget.setPointerCapture(e.pointerId)
+        document.body.classList.add('resizing-sidebar')
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return
+        const max = window.innerWidth * 0.6
+        onChange(Math.max(260, Math.min(max, e.clientX - drag.current.left)))
+      }}
+      onPointerUp={(e) => {
+        drag.current = null
+        e.currentTarget.releasePointerCapture(e.pointerId)
+        document.body.classList.remove('resizing-sidebar')
+      }}
+      onDoubleClick={() => onChange(null)}
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        e.preventDefault()
+        const w = width ?? current(e.currentTarget)
+        onChange(Math.max(260, Math.min(window.innerWidth * 0.6, w + (e.key === 'ArrowRight' ? 16 : -16))))
+      }}
+    />
+  )
 }
 
 /** um passo para trás no app (como no WhatsApp); false = já está na tela inicial */
@@ -151,6 +195,24 @@ function Main({ session }: { session: Session }) {
   }, [unreadChats])
   useEffect(() => () => setFaviconCount(0), []) // ao sair da conta, volta o ícone normal
 
+  // largura da lista de conversas no computador (arrastando a divisória); null = padrão
+  const [sidebarWidth, setSidebarWidth] = useState<number | null>(() => {
+    try {
+      const v = Number(localStorage.getItem('zap-sidebar-w'))
+      return v >= 200 && v <= 2000 ? v : null
+    } catch {
+      return null
+    }
+  })
+  useEffect(() => {
+    try {
+      if (sidebarWidth) localStorage.setItem('zap-sidebar-w', String(Math.round(sidebarWidth)))
+      else localStorage.removeItem('zap-sidebar-w')
+    } catch {
+      /* armazenamento indisponível */
+    }
+  }, [sidebarWidth])
+
   // notificações push deste aparelho (inscreve/atualiza ao entrar; respeita a configuração)
   const notificationsOn = s.settings.notifications
   useEffect(() => {
@@ -228,11 +290,15 @@ function Main({ session }: { session: Session }) {
   })()
 
   return (
-    <div className={cx('app', s.activeId && 'has-chat', s.rightPanel && s.activeId && 'has-right')}>
+    <div
+      className={cx('app', s.activeId && 'has-chat', s.rightPanel && s.activeId && 'has-right')}
+      style={sidebarWidth ? ({ '--sidebar-w': `${sidebarWidth}px` } as React.CSSProperties) : undefined}
+    >
       <NavRail />
       <aside className="sidebar">
         <div className="sidebar-content">{left}</div>
         <MobileTabs />
+        <SidebarResizer width={sidebarWidth} onChange={setSidebarWidth} />
       </aside>
       <main className="main">{s.activeId && s.conversations[s.activeId] ? <ChatWindow /> : <Welcome />}</main>
       {s.activeId && s.rightPanel && <RightPanel />}
