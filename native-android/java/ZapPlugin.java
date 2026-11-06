@@ -59,6 +59,20 @@ public class ZapPlugin extends Plugin {
         if (instance != null) instance.notifyListeners("notificationOpen", d, true);
     }
 
+    /** botão voltar: devolve false se o app (JS) não estiver ouvindo — aí a tela vai para segundo plano */
+    static boolean emitBack() {
+        if (instance == null || !instance.hasListeners("backButton")) return false;
+        instance.notifyListeners("backButton", new JSObject(), false);
+        return true;
+    }
+
+    /** "voltar" sem nada para fechar: manda o app para segundo plano (não encerra) */
+    @PluginMethod
+    public void minimize(PluginCall call) {
+        if (getActivity() != null) getActivity().moveTaskToBack(true);
+        call.resolve();
+    }
+
     static void emitToken(String token) {
         if (instance == null) return;
         JSObject d = new JSObject();

@@ -19,10 +19,12 @@ import { AppLogo, IconChat, IconGear, IconMegaphone, IconPhoneOutline, IconStarO
 import { isAdminEmail } from './lib/admin'
 import { setFaviconCount } from './lib/favicon'
 import { onNotificationOpen, onPushTokenChange, registerServiceWorker, syncPush } from './lib/push'
-import { isNative } from './lib/native'
+import { isNative, Zap } from './lib/native'
+import { closeTopmost } from './lib/back'
+import { SystemBars, SystemBarsStyle } from '@capacitor/core'
 import { emergencyAccount, useMesh, type MeshContact } from './lib/mesh/mesh'
 import { EmergencyPanel } from './components/emergency/Emergency'
-import { answerWhenRinging } from './components/call/callStore'
+import { answerWhenRinging, useCall } from './components/call/callStore'
 import { cx, ts } from './lib/utils'
 
 /** cor da barra de status do celular / barra do navegador, igual ao topo do app em cada tema */
@@ -35,7 +37,19 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_COLOR[theme])
+    // ícones da barra de status (hora, bateria) escuros no tema claro e claros no tema escuro
+    if (isNative()) SystemBars.setStyle({ style: theme === 'dark' ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => {})
   }, [theme])
+
+  // botão "voltar" do Android: fecha o que estiver aberto, um passo por vez; no fim, vai para segundo plano
+  useEffect(() => {
+    if (!isNative()) return
+    const h = Zap.addListener('backButton', () => {
+      if (closeTopmost() || stepBack()) return
+      Zap.minimize().catch(() => {})
+    })
+    return () => void h.then((x) => x.remove())
+  }, [])
 
   useEffect(() => {
     registerServiceWorker()
@@ -56,6 +70,26 @@ export default function App() {
   if (session === undefined) return <Splash />
   if (!session) return <Auth />
   return <Main session={session} />
+}
+
+/** um passo para trás no app (como no WhatsApp); false = já está na tela inicial */
+function stepBack(): boolean {
+  const call = useCall.getState()
+  if (call.phase !== 'idle' && call.phase !== 'ended') return false // em ligação: só minimiza, não desliga
+  const s = useChat.getState()
+  if (!s.session) return false
+  if (s.lightbox) return s.set({ lightbox: null }), true
+  if (s.statusViewer) return s.set({ statusViewer: null }), true
+  if (s.statusComposer) return s.set({ statusComposer: null }), true
+  if (s.stickerCreator) return s.set({ stickerCreator: null }), true
+  if (s.forwarding) return s.set({ forwarding: null }), true
+  if (s.selecting) return s.set({ selecting: null }), true
+  if (s.editing) return s.set({ editing: null }), true
+  if (s.activeId && s.rightPanel) return s.set({ rightPanel: null }), true
+  if (s.activeId) return s.openChat(null), true
+  if (s.leftPanel === 'newGroup') return s.set({ leftPanel: 'newChat' }), true
+  if (s.leftPanel !== 'chats') return s.set({ leftPanel: 'chats' }), true
+  return false
 }
 
 function EmergencyStandalone({ uid }: { uid: string }) {

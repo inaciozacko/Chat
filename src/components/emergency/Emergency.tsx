@@ -3,6 +3,7 @@ import { useMesh, type MeshContact, type MeshMsg } from '../../lib/mesh/mesh'
 import { isNative } from '../../lib/native'
 import { Avatar, PanelHeader } from '../common'
 import { cx } from '../../lib/utils'
+import { useBackHandler } from '../../lib/back'
 
 /**
  * Modo emergência: conversar SEM internet com quem tem o Zap.
@@ -14,6 +15,7 @@ export function EmergencyPanel({ onBack, standalone = false }: { onBack?: () => 
   const [q, setQ] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  useBackHandler(peer !== null, () => setPeer(null)) // voltar sai da conversa de emergência
 
   useEffect(() => {
     if (!toast) return

@@ -1,5 +1,6 @@
 import { memo, useState, type ReactNode } from 'react'
 import { useChat } from '../../store/chat'
+import { useBackHandler } from '../../lib/back'
 import { Emoji, emojify } from '../emoji/AnimatedEmoji'
 import { EmojiPanel } from '../emoji/EmojiPanel'
 import type { Member, Message, Profile, Reaction } from '../../lib/types'
@@ -566,6 +567,7 @@ function ReactionBar({
   onMore: () => void
   onClose: () => void
 }) {
+  useBackHandler(true, onClose)
   const r = anchor.getBoundingClientRect()
   const top = r.top - 56 < 70 ? r.bottom + 8 : r.top - 56
   const left = Math.max(8, Math.min(window.innerWidth - 330, r.left - 150))

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useChat } from '../../store/chat'
+import { useBackHandler } from '../../lib/back'
 import { sendTyping } from '../../lib/realtime'
 import { countCameras, defaultFacing, deviceIdOf, isMirrored, openCamera, type Facing } from '../../lib/camera'
 import {
@@ -28,6 +29,7 @@ export function Composer({ convId, onFiles }: { convId: string; onFiles: (files:
   const uid = s.session!.user.id
   const [text, setText] = useState('')
   const [panel, setPanel] = useState<null | 'emoji' | 'sticker'>(null)
+  useBackHandler(panel !== null, () => setPanel(null)) // voltar fecha o painel de emojis/figurinhas
   const [attach, setAttach] = useState<HTMLElement | null>(null)
   const [camera, setCamera] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -416,6 +418,7 @@ function CameraCapture({ onClose, onCapture }: { onClose: () => void; onCapture:
   }
   const flip = () => !busy && setFacing((f) => (f === 'user' ? 'environment' : 'user'))
 
+  useBackHandler(true, onClose)
   return (
     <div className="camera-overlay">
       <div className="camera-top">

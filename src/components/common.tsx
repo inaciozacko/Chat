@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { IconCheck, IconClock, IconDoubleCheck, IconGroup, IconUser } from '../lib/icons'
 import { cx } from '../lib/utils'
+import { useBackHandler } from '../lib/back'
 
 export function Avatar({
   url,
@@ -51,6 +52,7 @@ export function Menu({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: -9999, left: -9999 })
+  useBackHandler(true, onClose) // botão voltar do celular fecha o menu
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -119,6 +121,7 @@ export function Modal({
   onClose: () => void
   className?: string
 }) {
+  useBackHandler(true, onClose) // botão voltar do celular fecha a janela
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     document.addEventListener('keydown', key)

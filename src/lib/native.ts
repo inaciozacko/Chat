@@ -19,6 +19,8 @@ export interface ZapPlugin {
   notificationPermission(): Promise<{ state: string; enabled: boolean }>
   requestNotificationPermission(): Promise<{ state: string; enabled: boolean }>
   clearNotifications(o: { conversationId?: string; callId?: string; mesh?: boolean }): Promise<void>
+  /** vai para segundo plano (botão voltar sem nada para fechar) */
+  minimize(): Promise<void>
 
   meshStart(): Promise<MeshStatus>
   meshStop(): Promise<MeshStatus>
@@ -36,6 +38,7 @@ export interface ZapPlugin {
   ): Promise<PluginListenerHandle>
   addListener(event: 'pushToken', cb: (d: { token: string }) => void): Promise<PluginListenerHandle>
   addListener(event: 'meshChanged', cb: (d: MeshStatus) => void): Promise<PluginListenerHandle>
+  addListener(event: 'backButton', cb: () => void): Promise<PluginListenerHandle>
 }
 
 export const Zap = registerPlugin<ZapPlugin>('Zap')

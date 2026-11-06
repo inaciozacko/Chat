@@ -3,6 +3,7 @@ package app.zap.chat;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
+import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.BridgeActivity;
 
 /** Tela única do app: o WebView do Capacitor com o Zap dentro. */
@@ -17,6 +18,15 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         Notifs.ensureChannels(this);
         handle(getIntent());
+
+        // botão/gesto "voltar": quem decide é o app (fecha a conversa, o menu, a foto...);
+        // sem nada para fechar, vai para segundo plano em vez de encerrar — como o WhatsApp
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (!ZapPlugin.emitBack()) moveTaskToBack(true);
+            }
+        });
     }
 
     @Override
